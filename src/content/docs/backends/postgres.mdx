@@ -3,7 +3,12 @@ title: PostgreSQL
 description: The full feature set on the database you already have.
 ---
 
-`PostgresBackend` gives you everything the Redis `lease` strategy does: one winner per run, backups, no overlapping runs, catch-up and hand-over on `stop()`. It needs PostgreSQL 9.5 or newer.
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+`PostgresBackend` gives you everything the Redis `lease` strategy does: one winner per run, backups, no overlapping runs, catch-up and hand-over on `stop()`. It needs PostgreSQL 9.5 or newer. In .NET it is the `Anarchon.Postgres` package, on Npgsql.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 import { PostgresBackend, Scheduler } from 'anarchon';
@@ -13,9 +18,28 @@ const scheduler = new Scheduler({
 });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+using Anarchon;
+using Anarchon.Postgres;
+
+var scheduler = new Scheduler(new SchedulerOptions
+{
+    Backend = new PostgresBackend(builder.Configuration.GetConnectionString("app")!),
+});
+```
+
+</TabItem>
+</Tabs>
+
 ## Connecting
 
-`connection` accepts a connection string or a client you already have.
+`connection` accepts a connection string or a client you already have. In .NET, `ConnectionString` takes an Npgsql connection string, and `DataSource` your own `NpgsqlDataSource`.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 // A connection string. anarchon opens a small pool with `pg` and closes it on stop().
@@ -25,7 +49,24 @@ new PostgresBackend({ connection: process.env.DATABASE_URL }); // postgres://; u
 new PostgresBackend();
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+// A connection string. anarchon opens a data source (a pool) and disposes of it on StopAsync().
+new PostgresBackend("Host=db;Database=app;Username=app;Password=...");
+
+// No connection string: Host=localhost;Database=postgres
+new PostgresBackend(new PostgresBackendOptions());
+```
+
+</TabItem>
+</Tabs>
+
 ### Your own pool or client
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 import { Pool } from 'pg';
@@ -33,6 +74,24 @@ import { Pool } from 'pg';
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 new PostgresBackend({ connection: pool }); // stop() does not end the pool
 ```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+await using var dataSource = NpgsqlDataSource.Create(builder.Configuration.GetConnectionString("app")!);
+new PostgresBackend(new PostgresBackendOptions { DataSource = dataSource }); // StopAsync() does not dispose of it
+
+// With a host, the data source that AddNpgsqlDataSource() registers:
+builder.Services.AddNpgsqlDataSource(builder.Configuration.GetConnectionString("app")!);
+builder.Services.AddAnarchon()
+    .UsePostgres((services, options) => options.DataSource = services.GetRequiredService<NpgsqlDataSource>());
+```
+
+</TabItem>
+</Tabs>
+
+In Node.js:
 
 | You pass | Library |
 | --- | --- |
@@ -48,7 +107,7 @@ const sql = postgres(process.env.DATABASE_URL);
 new PostgresBackend({ connection: sql });
 ```
 
-A pool is the better choice in a service. A single `Client` can only run one statement at a time, so anarchon queues its own statements on it.
+A pool is the better choice in a service. A single `Client` can only run one statement at a time, so anarchon queues its own statements on it. In .NET there is only the pool: a data source.
 
 ## Options
 
@@ -57,9 +116,11 @@ A pool is the better choice in a service. A single `Client` can only run one sta
 | `connection` | `postgres://localhost:5432/postgres` | Connection string, or your own client |
 | `table` | `'anarchon_runs'` | Table name. May include a schema: `'jobs.cron_runs'` |
 
+In .NET, `PostgresBackendOptions` has `ConnectionString` (default `Host=localhost;Database=postgres`), `DataSource` and `Table` (default `"anarchon_runs"`). Setting both `ConnectionString` and `DataSource` throws an `ArgumentException`.
+
 ## Tables
 
-They are created on `start()` if they don't exist. Two instances starting together is fine.
+They are created on `start()` (`StartAsync()`) if they don't exist. Two instances starting together is fine.
 
 | Table | One row per | Holds |
 | --- | --- | --- |
@@ -68,13 +129,26 @@ They are created on `start()` if they don't exist. Two instances starting togeth
 | `<table>_jobs` | job | the row that makes claims of one job take turns |
 | `<table>_meta` | setting | the store format, so a newer anarchon's data is never misread |
 
-If your application's database user can't create tables, create them once with a privileged user by running `start()` in a migration step, then grant `SELECT, INSERT, UPDATE, DELETE` on the four tables.
+If your application's database user can't create tables, create them once with a privileged user by running `start()` (`StartAsync()`) in a migration step, then grant `SELECT, INSERT, UPDATE, DELETE` on the four tables.
 
 To keep them out of your main schema:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 new PostgresBackend({ connection: pool, table: 'jobs.cron_runs' }); // the schema must exist
 ```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+new PostgresBackend(new PostgresBackendOptions { DataSource = dataSource, Table = "jobs.cron_runs" }); // the schema must exist
+```
+
+</TabItem>
+</Tabs>
 
 ## How one instance wins
 
@@ -122,7 +196,7 @@ Each claim is a single transaction, and anarchon keeps no session state between 
 
 ## History
 
-History lives in `<table>_attempts`, trimmed to about `historySize` attempts per job and to `historyTtlMs` if you set it. Because it is an ordinary table, you can query it yourself:
+History lives in `<table>_attempts`, trimmed to about `historySize` attempts per job and to `historyTtlMs` (`HistoryTtl`) if you set it. Because it is an ordinary table, you can query it yourself:
 
 ```sql
 SELECT job, slot, attempt, instance_id, reason, claimed_at
@@ -132,7 +206,7 @@ ORDER BY slot DESC, attempt DESC
 LIMIT 20;
 ```
 
-Treat the table layout as internal: it can change between versions. `scheduler.history()` is the stable way to read it.
+Treat the table layout as internal: it can change between versions. `scheduler.history()` (`HistoryAsync()` in .NET) is the stable way to read it. The Node.js and .NET backends use the same tables, so instances of both can share them.
 
 ## Next
 

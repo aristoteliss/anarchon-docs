@@ -1,6 +1,6 @@
 ---
 title: Choosing anarchon
-description: When anarchon fits, when BullMQ, node-cron, your own lock or a Kubernetes CronJob fits better, and what each one asks of you.
+description: When anarchon fits, when BullMQ, node-cron, Quartz.NET, Hangfire, your own lock or a Kubernetes CronJob fits better, and what each one asks of you.
 ---
 
 anarchon is one of several ways to run scheduled work in a service with more than one instance. This page says where it fits, where another tool fits better, and what each choice leaves for you to handle.
@@ -14,6 +14,8 @@ What this page says about other tools was checked on **13 October 2026** against
 | anarchon | Recurring handlers that run inside your service's instances, coordinated through a store they already share | Recovery depends on the backend; attempts are bounded; handlers must be idempotent; some slots are skipped by design |
 | BullMQ | Queued work: a backlog, retries with backoff, rate limits, flows of dependent jobs | Queue concepts and configuration; workers to run, in your application's process or in separate ones |
 | node-cron | Timers in one process, or one runner per scheduled time with its `distributed` option | What happens to a run whose runner dies; the lease must be longer than the run |
+| Quartz.NET (.NET) | A rich trigger model, clustered through one database | Its tables in a database; recovery only for jobs marked for it; synchronized clocks |
+| Hangfire (.NET) | Queued background work with retries and a dashboard | Its storage and servers; jobs that may run more than once |
 | Your own timer and lock | A team that wants to own the scheduling and locking code | Renewal, recovery, history, shutdown and failure behavior are yours to design and test |
 | Kubernetes CronJob | Batch work that should run as its own container, apart from the service | A Pod started per run; Job and Pod lifecycle; manifests to maintain |
 
@@ -24,7 +26,7 @@ What this page says about other tools was checked on **13 October 2026** against
 - **Who runs a scheduled time.** Every instance computes the same slot and tries to claim it; one atomic step in the store lets one instance win each attempt.
 - **When the runner dies.** On a lease backend, another instance starts the run again as a new attempt, about one lease later, up to `maxAttempts`. The handler starts from the beginning. On RabbitMQ, NATS with `msg-id` and the simple Redis strategies the run is lost.
 - **Long runs.** On a lease backend the next run of a job is skipped while the current one holds a live lease.
-- **Missed schedules.** On start, only the latest missed run is run, and only if it was due within `catchUpMs`. Older runs are not replayed.
+- **Missed schedules.** On start, only the latest missed run is run, and only if it was due within the catch-up window (`catchUpMs`, `CatchUp` in .NET). Older runs are not replayed.
 
 The [backend table](../../backends/overview/#what-each-backend-gives-you) shows which backend has which of these, and [Guarantees and limits](../../reference/guarantees/) states what is and isn't promised.
 
@@ -48,6 +50,32 @@ node-cron runs a function on a timer in the process that scheduled it. Without m
 - **Limits it states.** Its documentation calls this "a coordination primitive, not a transactional queue", says a fire can run more than once after a crash and retry or with large clock skew, and advises idempotent tasks. It does not say that another instance takes over a run whose runner died.
 
 Choose node-cron when one process runs the schedule, or when one runner per scheduled time is all you need. anarchon adds a renewed lease with takeover of a dead runner's run, hand-over on shutdown, catch-up after downtime, and a run history, on stores other than Redis too.
+
+## On .NET: Quartz.NET and Hangfire
+
+The .NET package compares with two libraries .NET services often use.
+
+**Quartz.NET** is a scheduler with jobs and triggers (calendars, misfire rules). Several nodes can
+share one job store in a database and form a cluster.
+
+- **Several instances.** Clustering works only with the ADO.NET job store: every node uses the same
+  database tables, and each node needs a unique instance ID. Its documentation lists load balancing
+  and fail-over among the cluster's features.
+- **A runner that dies.** Another node re-runs the job only if the job was marked to request recovery.
+- **Limits it states.** Never cluster nodes on separate machines unless their clocks are synchronized.
+  A node at 100% CPU may fail to update the job store in time, and other nodes can then consider its
+  jobs lost and run them again.
+
+Choose Quartz.NET when you need its trigger model, and a database with its own schema of tables is
+fine. anarchon keeps its state in a few keys or tables on Redis, Valkey, NATS and SQLite as well,
+hands a running job over on a graceful stop, and shares its data with Node.js instances.
+
+**Hangfire** is a background job processor, like BullMQ: recurring jobs put background jobs in its
+storage, and workers on every server process them. Its servers coordinate through distributed locks
+in that storage, and its maintainer advises jobs that can run more than once safely.
+
+Choose Hangfire when the work is a queue: a backlog, retries, a dashboard of jobs. anarchon decides
+which instance runs a job at each scheduled time and keeps no backlog.
 
 ## Your own timer and lock
 
@@ -88,5 +116,7 @@ Choose a CronJob when the work is a batch program with its own image, resources 
 | --- | --- | --- |
 | BullMQ | 6.3.14 | [Workers](https://docs.bullmq.io/guide/workers), [Stalled jobs](https://docs.bullmq.io/guide/workers/stalled-jobs), [Job Schedulers](https://docs.bullmq.io/guide/job-schedulers), [PostgreSQL backend](https://docs.bullmq.io/guide/postgresql) |
 | node-cron | 4.6.0, with `@node-cron/redis-coordinator` 0.1.0 | [README](https://github.com/node-cron/node-cron), [Distributed coordination](https://nodecron.com/distributed-coordination) |
+| Quartz.NET | Documentation for 4.x | [Advanced (Enterprise) Features](https://www.quartz-scheduler.net/documentation/quartz-4.x/tutorial/advanced-enterprise-features.html) |
+| Hangfire | Current documentation | [Running Multiple Server Instances](https://docs.hangfire.io/en/latest/background-processing/running-multiple-server-instances.html), [issue #1025](https://github.com/HangfireIO/Hangfire/issues/1025) |
 | Redlock | The algorithm as documented by Redis | [Distributed Locks with Redis](https://redis.io/docs/latest/develop/clients/patterns/distributed-locks/) |
 | Kubernetes | Documentation for v1.37 | [CronJob](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/) |

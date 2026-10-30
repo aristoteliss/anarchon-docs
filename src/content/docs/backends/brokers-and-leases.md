@@ -82,7 +82,7 @@ So NATS with `lease` is a lease backend with the same guarantees as Redis, Postg
 
 On a claim-only backend, write each run to work on [everything outstanding](../../reference/guarantees/#that-every-slot-runs). A lost run then costs a delay, not lost work.
 
-The options only leases can honour aren't available on a claim-only backend: `overlap`, `maxAttempts` and `catchUpMs` on jobs, `leaseMs` and `heartbeatMs` on the scheduler. Typed code that sets them doesn't compile, and a decorator or JavaScript that sets them gets an error when the job or scheduler is created. This also covers Redis and Valkey with a strategy other than `lease`, and NATS with `msg-id`.
+The options only leases can honour aren't available on a claim-only backend: `overlap`, `maxAttempts` and `catchUpMs` on jobs, `leaseMs` and `heartbeatMs` on the scheduler. Typed code that sets them doesn't compile, and a decorator or JavaScript that sets them gets an error when the job or scheduler is created. In .NET (`Overlap`, `MaxAttempts`, `CatchUp`, `YieldAfterFailure`, `Lease`, `Heartbeat`), adding the job or creating the scheduler throws an `AnarchonException` with code `Unsupported`. This also covers Redis and Valkey with a strategy other than `lease`, and NATS with `msg-id`.
 
 ## Next
 

@@ -3,6 +3,10 @@ title: Events
 description: Every event and every field of its payload.
 ---
 
+:::note[Node.js]
+This page describes the Node.js package. For .NET, see [Events (.NET)](../dotnet/events/).
+:::
+
 ```ts
 scheduler.on(event, listener);
 scheduler.once(event, listener);

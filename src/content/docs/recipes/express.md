@@ -1,6 +1,8 @@
 ---
 title: Express API
 description: A scheduler inside an Express service, with endpoints to list jobs, read history and run a job now.
+sidebar:
+  badge: 'Node.js'
 ---
 
 A common setup: the service that serves HTTP also runs the scheduled jobs, and exposes a few admin endpoints for them.

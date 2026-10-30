@@ -5,6 +5,8 @@ description: The parts of anarchon and what each one is responsible for.
 
 This section explains how anarchon works inside. You don't need it to use the library, but it helps when you tune timings, debug a surprising run, or write a backend.
 
+The Node.js and .NET versions are built the same way, part for part, and follow the same rules. These pages use the Node.js names; [Options (.NET)](../../reference/dotnet/options/#the-nodejs-names) maps them to the .NET ones (`leaseMs` is `Lease`, `catchUpMs` is `CatchUp`).
+
 ## The design in one paragraph
 
 Every instance computes the same run times from the same schedule. When a run time arrives, each instance waits a random moment and then asks the shared store to record that it is running that run. The store does this as one atomic step, so exactly one instance is told "won". With a lease backend the winner then keeps a lease alive while the job runs, and the other instances watch that lease so one of them can take over if it stops being renewed.
@@ -41,7 +43,7 @@ flowchart TB
   backend --> store[("Shared store")]
 ```
 
-| Part | File | Responsibility |
+| Part | Node.js file | Responsibility |
 | --- | --- | --- |
 | `Scheduler` | `src/scheduler/scheduler.ts` | The public API (`every`, `cron`, `start`, `stop`, `history`...) and the lifecycle. It owns the state and delegates the work |
 | Job building | `src/scheduler/job.ts` | Checks a job's name and options against its schedule and the backend, and applies the defaults |
@@ -52,7 +54,9 @@ flowchart TB
 | `Executor` | `src/scheduler/executor.ts` | Calls your handler, applies the timeout, decides how the run ended, stores the result and emits events |
 | Backends | `src/backends/` | One adapter per store. Each implements the atomic claim with what that store offers |
 
-The parts don't reach into each other. They share one small interface (`SchedulerCore`): whether the scheduler is running, the stop signal, how to emit an event, and how to register work that `stop()` must wait for.
+In .NET the same parts are in `src/Anarchon/`: `Scheduler.cs`, and under `Scheduling/` the files `JobFactory.cs`, `Schedule.cs`, `JobTimers.cs`, `LeaseRunner.cs`, `ClaimOnlyRunner.cs` and `Executor.cs`. Each backend is a package of its own (`src/Anarchon.Redis/` and the others), and `src/Anarchon.Sql/` holds what PostgreSQL and SQLite share.
+
+The parts don't reach into each other. They share one small interface (`SchedulerCore`, `ISchedulerCore` in .NET): whether the scheduler is running, the stop signal, how to emit an event, and how to register work that `stop()` must wait for.
 
 ## Two kinds of runner
 

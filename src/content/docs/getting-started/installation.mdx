@@ -1,11 +1,14 @@
 ---
 title: Installation
-description: Install anarchon and the driver for the store you use.
+description: Install anarchon for Node.js or .NET, with the driver for the store you use.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-anarchon needs **Node.js 20 or newer**.
+anarchon comes as the `anarchon` package on npm (Node.js 20 or newer) and as the `Anarchon` packages on NuGet (.NET 10). Pick your language; the tab you pick holds for every page.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 Install anarchon and the driver for your store. Drivers are optional peer dependencies, so you only install the one you use.
 
@@ -51,6 +54,51 @@ Install anarchon and the driver for your store. Drivers are optional peer depend
 
 `npm install` and `yarn add` work the same way.
 
+</TabItem>
+<TabItem label=".NET">
+
+Each store is a package of its own, which brings in `Anarchon` (the core) and the store's driver.
+
+<Tabs syncKey="backend">
+  <TabItem label="Redis / Valkey">
+    ```sh
+    dotnet add package Anarchon.Redis
+    ```
+    Redis 5 or newer, or Valkey, on StackExchange.Redis. You can pass an `IConnectionMultiplexer` your app already has.
+  </TabItem>
+  <TabItem label="PostgreSQL">
+    ```sh
+    dotnet add package Anarchon.Postgres
+    ```
+    PostgreSQL 9.5 or newer, on Npgsql. You can pass your app's `NpgsqlDataSource` instead of a connection string.
+  </TabItem>
+  <TabItem label="SQLite">
+    ```sh
+    dotnet add package Anarchon.Sqlite
+    ```
+    Microsoft.Data.Sqlite brings SQLite with it (3.24 or newer is needed). libSQL and Turso are Node.js only.
+  </TabItem>
+  <TabItem label="RabbitMQ">
+    ```sh
+    dotnet add package Anarchon.RabbitMQ
+    ```
+    RabbitMQ 3.9 or newer, on RabbitMQ.Client 7.
+  </TabItem>
+  <TabItem label="NATS">
+    ```sh
+    dotnet add package Anarchon.Nats
+    ```
+    JetStream must be enabled on the server; `NatsStrategy.Lease` needs nats-server 2.10 or newer.
+  </TabItem>
+</Tabs>
+
+With a host (ASP.NET Core, a worker service), `AddAnarchon()` and `UseRedis()`, `UsePostgres()`,
+`UseSqlite()`, `UseRabbitMQ()` or `UseNats()` come with these packages: see
+[ASP.NET Core](../../recipes/aspnet-core/).
+
+</TabItem>
+</Tabs>
+
 ## Which store should I pick?
 
 Use the one your service already has. If you have a choice:
@@ -60,14 +108,14 @@ Use the one your service already has. If you have a choice:
 | Redis or Valkey | The default, `lease` strategy | The full feature set, and the least latency |
 | PostgreSQL, no Redis | `PostgresBackend` | The full feature set, with no new infrastructure |
 | One machine, several processes | `SqliteBackend` on a file | No server at all |
-| Only NATS | `NatsBackend` with `strategy: 'lease'` | The full feature set, on a JetStream key-value bucket |
+| Only NATS | `NatsBackend` with its lease strategy (`strategy: 'lease'`, `NatsStrategy.Lease`) | The full feature set, on a JetStream key-value bucket |
 | Only RabbitMQ | `RabbitMQBackend` | One winner per run, but no backups, overlap protection or catch-up |
 
 [Backends overview](../../backends/overview/) compares them in detail.
 
 ## TypeScript
 
-anarchon is written in TypeScript and ships its own types. There is nothing extra to install.
+Node.js only: anarchon is written in TypeScript and ships its own types. There is nothing extra to install.
 
 ```ts
 import { Scheduler, type JobContext, type RunRecord } from 'anarchon';
@@ -81,7 +129,12 @@ const { Scheduler } = require('anarchon');
 
 ## Check that it works
 
-Save this as `check.mjs` and run `node check.mjs`. It uses a SQLite file, so it needs no server (Node 22.13 or newer).
+It uses a SQLite file, so it needs no server.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
+Save this as `check.mjs` and run `node check.mjs` (Node 22.13 or newer).
 
 ```js
 import { Scheduler, SqliteBackend } from 'anarchon';
@@ -92,6 +145,30 @@ scheduler.every('hello', '2s', (ctx) => console.log('hello at', ctx.scheduledAt.
 await scheduler.start();
 setTimeout(() => scheduler.stop(), 7_000);
 ```
+
+</TabItem>
+<TabItem label=".NET">
+
+In a console project with `Anarchon.Sqlite`, put this in `Program.cs` and run `dotnet run`.
+
+```csharp
+using Anarchon;
+using Anarchon.Sqlite;
+
+await using var scheduler = new Scheduler(new SchedulerOptions { Backend = new SqliteBackend("Data Source=anarchon.db") });
+scheduler.Every("hello", TimeSpan.FromSeconds(2), ctx =>
+{
+    Console.WriteLine($"hello at {ctx.ScheduledAt:O}");
+    return Task.CompletedTask;
+});
+
+await scheduler.StartAsync();
+await Task.Delay(TimeSpan.FromSeconds(7));
+await scheduler.StopAsync();
+```
+
+</TabItem>
+</Tabs>
 
 You should see a line every two seconds, then the process exits.
 

@@ -3,7 +3,12 @@ title: RabbitMQ
 description: One winner per run using a bounded queue and publisher confirms. Claim only.
 ---
 
-`RabbitMQBackend` makes sure one instance runs each scheduled time, using a RabbitMQ you already have. It needs RabbitMQ 3.9 or newer.
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+`RabbitMQBackend` makes sure one instance runs each scheduled time, using a RabbitMQ you already have. It needs RabbitMQ 3.9 or newer. In .NET it is the `Anarchon.RabbitMQ` package, on RabbitMQ.Client.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 import { RabbitMQBackend, Scheduler } from 'anarchon';
@@ -12,6 +17,22 @@ const scheduler = new Scheduler({
   backend: new RabbitMQBackend({ url: 'amqp://rabbit.internal' }),
 });
 ```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+using Anarchon;
+using Anarchon.RabbitMQ;
+
+var scheduler = new Scheduler(new SchedulerOptions
+{
+    Backend = new RabbitMQBackend("amqp://rabbit.internal"),
+});
+```
+
+</TabItem>
+</Tabs>
 
 :::caution[Claim only]
 The bounded queue this backend uses decides who is first, but it holds no lease that a backup could check. So with this backend there are **no backup runners, no overlap protection, no catch-up and no hand-over**. If the instance running a job dies, that run is lost. For those features use Redis, PostgreSQL or SQLite. See [Brokers and leases](../brokers-and-leases/).
@@ -26,12 +47,29 @@ The bounded queue this backend uses decides who is first, but it holds no lease 
 | `prefix` | `'cron.'` | Prefix of every queue name |
 | `slotTtlMs` | `300000` (5 min) | How long RabbitMQ remembers that a run was taken |
 
+In .NET, `RabbitMQBackendOptions` has `ConnectionString` (an AMQP URI), `Connection` (your own `IConnection`, which you keep), `Prefix` and `SlotTtl` (a `TimeSpan`, default 5 minutes).
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
 ```ts
 import amqplib from 'amqplib';
 
 const connection = await amqplib.connect(process.env.AMQP_URL);
 new RabbitMQBackend({ connection, prefix: 'billing.cron.', slotTtlMs: 15 * 60_000 });
 ```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+var factory = new ConnectionFactory { Uri = new Uri(builder.Configuration.GetConnectionString("amqp")!) };
+await using var connection = await factory.CreateConnectionAsync();
+new RabbitMQBackend(new RabbitMQBackendOptions { Connection = connection, Prefix = "billing.cron.", SlotTtl = TimeSpan.FromMinutes(15) });
+```
+
+</TabItem>
+</Tabs>
 
 ## How one instance wins
 
@@ -43,7 +81,7 @@ Each run gets its own small "gate" queue, named `<prefix><job>.slot.<slot>`, dec
 | --- | --- | --- |
 | `x-max-length` | `1` | The queue holds one message |
 | `x-overflow` | `reject-publish` | A publish to a full queue is refused, not dropped silently |
-| `x-expires` | `slotTtlMs` | The queue deletes itself after being unused that long |
+| `x-expires` | `slotTtlMs` (`SlotTtl`) | The queue deletes itself after being unused that long |
 
 ```mermaid
 sequenceDiagram
@@ -72,16 +110,16 @@ If the connection drops after the publish and before the confirm arrives, the in
 
 ## Limits to know
 
-- **`jitterMs + maxLateMs` must be shorter than `slotTtlMs`.** After the gate queue expires, RabbitMQ no longer knows the run was taken, and a very late instance could run it again. anarchon checks this when you add a job and throws if the settings are unsafe. With the defaults (2 s + 60 s against 5 min) you are fine.
+- **`jitterMs + maxLateMs` must be shorter than `slotTtlMs`** (in .NET, `Jitter + MaxLate` shorter than `SlotTtl`). After the gate queue expires, RabbitMQ no longer knows the run was taken, and a very late instance could run it again. anarchon checks this when you add a job and throws if the settings are unsafe (in .NET, an `AnarchonException` with code `UnsafeJob`). With the defaults (2 s + 60 s against 5 min) you are fine.
 - **Job names** may only contain letters, digits, `_` and `-`, because they become queue names.
 - **One queue per run.** A job that runs every second creates a queue every second, each living `slotTtlMs`. With the default that is about 300 small queues per such job at any moment. For very frequent jobs prefer Redis.
 - **A queue keeps the arguments it was created with.** Instances whose `slotTtlMs` or `historySize` differ use the existing queues as they are, so a new `slotTtlMs` applies to the gate queues of later runs. The history queue keeps its first size: to resize it, delete `<prefix><job>.history`, which also deletes that job's history.
 
 ## History
 
-History is kept in a **stream queue** per job, `<prefix><job>.history`, sized from the job's `historySize`. This is why RabbitMQ 3.9 is needed: streams arrived in that version. History is trimmed by size only, so `historyTtlMs` is refused.
+History is kept in a **stream queue** per job, `<prefix><job>.history`, sized from the job's `historySize`. This is why RabbitMQ 3.9 is needed: streams arrived in that version. History is trimmed by size only, so `historyTtlMs` (`HistoryTtl`) is refused.
 
-`history()`, `lastRun()` and `runNow()` work as on other backends. A run whose runner died keeps the status `running`, since nothing can tell it stopped.
+`history()`, `lastRun()` and `runNow()` (`HistoryAsync()`, `LastRunAsync()`, `RunNowAsync()`) work as on other backends. A run whose runner died keeps the status `running`, since nothing can tell it stopped.
 
 ## Next
 

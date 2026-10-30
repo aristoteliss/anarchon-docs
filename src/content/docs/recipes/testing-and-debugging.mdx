@@ -3,9 +3,16 @@ title: Testing and debugging
 description: Test handlers and schedules without a server, and step through a run in a debugger.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 ## Testing a handler
 
 A handler is a function. The most useful tests call it directly with a context you build yourself. No scheduler is involved.
+
+In .NET only the scheduler creates a `JobContext`, so let the handler pass on what it uses (the slot, the attempt, the token) to a method you can call from a test.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 import { test } from 'node:test';
@@ -42,11 +49,52 @@ test('stops when the signal aborts', async () => {
 });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+// The job: a thin handler around a method that takes what it needs
+public sealed class InvoiceJobs(Invoices invoices)
+{
+    [Cron("0 6 1 * *", Name = "monthly-invoices")]
+    public Task BuildAsync(JobContext ctx) => invoices.BuildAsync(ctx.ScheduledAt, ctx.CancellationToken);
+}
+
+// The tests (xUnit)
+public sealed class InvoiceTests
+{
+    private static readonly DateTimeOffset Slot = new(2026, 10, 1, 6, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task running_twice_for_the_same_slot_creates_each_invoice_once()
+    {
+        var invoices = new Invoices(TestDatabase.Create());
+        await invoices.BuildAsync(Slot, CancellationToken.None);
+        await invoices.BuildAsync(Slot, CancellationToken.None); // attempt 2, after a takeover
+        Assert.Equal(3, await invoices.CountAsync());
+    }
+
+    [Fact]
+    public async Task stops_when_the_token_is_cancelled()
+    {
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new Invoices(TestDatabase.Create()).BuildAsync(Slot, cancelled.Token));
+    }
+}
+```
+
+</TabItem>
+</Tabs>
+
 Those two tests cover the two things a handler owes the scheduler: being safe to run twice, and stopping when asked.
 
 ## Testing with a real scheduler
 
 To test the wiring, use `SqliteBackend` on a temporary file. It needs no server and behaves like the production lease backends.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 import { mkdtempSync } from 'node:fs';
@@ -64,9 +112,31 @@ function testScheduler(instanceId = 'test') {
 }
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+using Anarchon;
+using Anarchon.Sqlite;
+
+static string TestFile() => Path.Combine(Directory.CreateTempSubdirectory("cron-test-").FullName, "jobs.db");
+
+static Scheduler TestScheduler(string instanceId = "test", string? file = null) => new(new SchedulerOptions
+{
+    Backend = new SqliteBackend($"Data Source={file ?? TestFile()}"),
+    InstanceId = instanceId,
+});
+```
+
+</TabItem>
+</Tabs>
+
 ### Run a job without waiting for its schedule
 
-`runNow()` executes the job at once and returns its record:
+`runNow()` (`RunNowAsync()`) executes the job at once and returns its record:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 test('the sync job succeeds', async () => {
@@ -82,11 +152,34 @@ test('the sync job succeeds', async () => {
 });
 ```
 
-`catchUpMs: 0` stops the scheduler from also running the latest slot on start, which would otherwise add a run you didn't ask for.
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+[Fact]
+public async Task the_sync_job_succeeds()
+{
+    await using var scheduler = TestScheduler(); // stopped at the end of the test
+    scheduler.Every("sync", TimeSpan.FromHours(1), SyncCustomersAsync, new() { CatchUp = TimeSpan.Zero });
+    await scheduler.StartAsync();
+
+    var run = await scheduler.RunNowAsync("sync");
+
+    Assert.Equal(RunStatus.Success, run.Status);
+}
+```
+
+</TabItem>
+</Tabs>
+
+`catchUpMs: 0` (`CatchUp = TimeSpan.Zero`) stops the scheduler from also running the latest slot on start, which would otherwise add a run you didn't ask for.
 
 ### Two instances
 
 To see that a run happens once, share the file between two schedulers:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 test('two instances, one run per slot', async () => {
@@ -106,9 +199,42 @@ test('two instances, one run per slot', async () => {
 });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+[Fact]
+public async Task two_instances_one_run_per_slot()
+{
+    var file = TestFile();
+    var ran = new ConcurrentQueue<long>();
+    var instances = new[] { "A", "B" }.Select(id => TestScheduler(id, file)).ToList();
+    foreach (var scheduler in instances)
+    {
+        scheduler.Every("tick", TimeSpan.FromSeconds(1), ctx =>
+        {
+            ran.Enqueue(ctx.Slot);
+            return Task.CompletedTask;
+        }, new() { CatchUp = TimeSpan.Zero });
+    }
+
+    await Task.WhenAll(instances.Select(s => s.StartAsync()));
+    await Task.Delay(3_500);
+    await Task.WhenAll(instances.Select(s => s.StopAsync()));
+
+    Assert.Equal(ran.Count, ran.Distinct().Count()); // no slot ran twice
+}
+```
+
+</TabItem>
+</Tabs>
+
 ### Validation is checked at registration
 
 Bad options throw when the job is added, so they are easy to test without starting anything:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 test('refuses a jitter longer than half the interval', () => {
@@ -117,22 +243,52 @@ test('refuses a jitter longer than half the interval', () => {
 });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+[Fact]
+public async Task refuses_a_jitter_longer_than_half_the_interval()
+{
+    await using var scheduler = TestScheduler();
+    Assert.Throws<ArgumentOutOfRangeException>(() =>
+        scheduler.Every("bad", TimeSpan.FromSeconds(2), _ => Task.CompletedTask, new() { Jitter = TimeSpan.FromMilliseconds(1_500) }));
+}
+```
+
+</TabItem>
+</Tabs>
+
 ## Don't mock the clock around a real backend
 
-Fake timers move your process's clock, but the store keeps its own. On a lease backend the lease end is the store's time, so advancing a fake clock by an hour doesn't expire a lease, and the test ends up exercising something that can't happen. Test handlers with a fake context, and test wiring with `runNow()` and short real intervals.
+Fake timers move your process's clock, but the store keeps its own. On a lease backend the lease end is the store's time, so advancing a fake clock by an hour doesn't expire a lease, and the test ends up exercising something that can't happen. Test handlers with a fake context, and test wiring with `runNow()` and short real intervals. In .NET this holds for `SchedulerOptions.TimeProvider` too: a `FakeTimeProvider` moves the scheduler's timers, not the store's clock.
 
 ## Debugging a run
 
 The repository ships examples made for a debugger. From a checkout:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```sh
 pnpm install
 npx tsx examples/walkthrough.ts
 ```
 
-`examples/walkthrough.ts` runs two instances in one process against a SQLite file, with a 10-minute lease and lateness limit, so sitting on a breakpoint doesn't change the outcome. Its header lists the functions a run passes through, in order.
+</TabItem>
+<TabItem label=".NET">
 
-In VS Code, open **Run and Debug**, choose **Example: walkthrough (step through one run)** and press F5. It pauses just before `start()`. Step in with F11, or set breakpoints on:
+```sh
+git clone https://github.com/aristoteliss/anarchon-dotnet && cd anarchon-dotnet
+dotnet run --project examples/Walkthrough
+```
+
+</TabItem>
+</Tabs>
+
+`examples/walkthrough.ts` (`examples/Walkthrough` in .NET) runs two instances in one process against a SQLite file, with a 10-minute lease and lateness limit, so sitting on a breakpoint doesn't change the outcome. Its header lists the functions a run passes through, in order.
+
+In VS Code, open **Run and Debug**, choose **Example: walkthrough (step through one run)** and press F5. It pauses just before `start()`. Step in with F11, or set breakpoints on the functions below. The .NET repository has the same launch entry (**Example: Walkthrough**), which stops on `Debugger.Break()`; its header lists the C# methods, such as `JobTimers.Arm()`, `LeaseRunner.RunAsync()` and `Executor.ExecuteAsync()`.
 
 | File under `src/scheduler/` | Function | What happens there |
 | --- | --- | --- |
@@ -144,10 +300,10 @@ In VS Code, open **Run and Debug**, choose **Example: walkthrough (step through 
 | `lease-runner.ts` | `watch()` | A backup schedules its next check |
 
 :::caution
-A paused debugger stops your process's clock but not the store's. With normal lease timings, pausing on a breakpoint for longer than `leaseMs` makes a backup take the run over. That is the library working; raise `leaseMs` while you debug.
+A paused debugger stops your process's clock but not the store's. With normal lease timings, pausing on a breakpoint for longer than `leaseMs` (`Lease`) makes a backup take the run over. That is the library working; raise it while you debug.
 :::
 
-Other examples in the repository:
+Other examples in the repository. The [.NET repository](https://github.com/aristoteliss/anarchon-dotnet/tree/main/examples) has most of them as projects: `Failover`, `OptionsAndEvents`, `HttpApi`, `OwnClients`, `Basic`, `Attributes`, `Hosting`, `RunData`, `QuickStart`, and the real-life setups below.
 
 | Example | Shows |
 | --- | --- |
@@ -174,15 +330,35 @@ Real-life setups: each is a situation solved with a different set of options, an
 | [`examples/tenants.ts`](https://github.com/aristoteliss/anarchon/blob/main/examples/tenants.ts) | The same jobs per tenant, each in its own time zone | one job per tenant, `timezone` and `data` per job, a data function, `remove()`, `runNow()` with data |
 | [`examples/broker-notifications.ts`](https://github.com/aristoteliss/anarchon/blob/main/examples/broker-notifications.ts) | Only RabbitMQ, or NATS with `msg-id`: no leases | every run sends everything outstanding, `maxLateMs` under the broker's memory, no lease options |
 
+In .NET these are `Billing`, `CacheRefresh`, `NightlyExport`, `Tenants` and `BrokerNotifications`.
+
 ## Seeing what an instance does
 
 Turn on the built-in log while you investigate:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 new Scheduler({ backend, log: true });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+// The scheduler logs to the "Anarchon.Scheduler" category of its LoggerFactory; a host passes its own.
+using var loggers = LoggerFactory.Create(logging => logging.AddConsole().SetMinimumLevel(LogLevel.Debug));
+new Scheduler(new SchedulerOptions { Backend = backend, LoggerFactory = loggers });
+```
+
+</TabItem>
+</Tabs>
+
 Or log every event with its payload:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 for (const event of ['start', 'success', 'failure', 'interrupted', 'skip', 'lost', 'error'] as const) {
@@ -190,7 +366,26 @@ for (const event of ['start', 'success', 'failure', 'interrupted', 'skip', 'lost
 }
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.Started += (_, e) => Console.WriteLine($"started {e}");
+scheduler.Succeeded += (_, e) => Console.WriteLine($"succeeded {e}");
+scheduler.Failed += (_, e) => Console.WriteLine($"failed {e}");
+scheduler.Interrupted += (_, e) => Console.WriteLine($"interrupted {e}");
+scheduler.Skipped += (_, e) => Console.WriteLine($"skipped {e}");
+scheduler.Lost += (_, e) => Console.WriteLine($"lost {e}");
+scheduler.Error += (_, e) => Console.WriteLine($"error {e}");
+```
+
+</TabItem>
+</Tabs>
+
 Then compare with the cluster-wide view:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 console.table(
@@ -205,11 +400,24 @@ console.table(
 );
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+foreach (var r in await scheduler.HistoryAsync("sync", 10))
+{
+    Console.WriteLine($"{r.ScheduledAt:O} {r.InstanceId,-12} {r.Attempt} {r.Reason,-9} {r.Status,-11} {r.Duration?.TotalMilliseconds:0} ms");
+}
+```
+
+</TabItem>
+</Tabs>
+
 ## Common surprises
 
 | What you see | Why |
 | --- | --- |
-| A run starts right after `start()` with reason `catch-up` | The latest slot was due recently and nobody ran it. Set `catchUpMs: 0` to turn that off |
+| A run starts right after `start()` with reason `catch-up` | The latest slot was due recently and nobody ran it. Set `catchUpMs: 0` (`CatchUp = TimeSpan.Zero`) to turn that off |
 | Every instance but one logs `skipped (taken)` | That is normal: one winner per run |
 | `skipped (overlap)` | The previous run of that job is still going |
 | A run shows twice in history | One record per attempt: it was taken over |

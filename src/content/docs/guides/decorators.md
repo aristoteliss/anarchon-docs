@@ -1,9 +1,13 @@
 ---
-title: Decorators
+title: Decorators (Node.js)
 description: Declare jobs on the methods of a class with @Cron, @Every and @At. An object adds its own jobs when it is created, and the scheduler can be created for you from settings you give once.
 ---
 
 Jobs can be declared on the methods of a class instead of being passed to `every()`, `cron()` and `at()`. When an object of the class is created, it adds its jobs to the scheduler by itself.
+
+:::note[.NET]
+In .NET, jobs are declared with the attributes `[Cron]`, `[Every]` and `[At]`, and added with `Register()` or, with a host, `AddJobs<T>()`: see [Attributes](../attributes/).
+:::
 
 ```ts
 import { At, Cron, Every, type JobContext, RedisBackend, Scheduler } from 'anarchon';
@@ -87,9 +91,9 @@ Each decorator takes the same arguments as the method it stands for, without the
 
 | Decorator | Same as | Schedule |
 | --- | --- | --- |
-| `@Every(name?, interval, options?)` | [`every()`](../defining-jobs/#interval-jobs-every) | Milliseconds or a duration string such as `'10s'` |
-| `@Cron(name?, expression, options?)` | [`cron()`](../defining-jobs/#cron-jobs-cron) | A cron expression with 5 or 6 fields |
-| `@At(name?, when, options?)` | [`at()`](../defining-jobs/#one-off-jobs-at) | A `Date`, ms since 1970, or an ISO string |
+| `@Every(name?, interval, options?)` | [`every()`](../defining-jobs/#interval-jobs-every-every) | Milliseconds or a duration string such as `'10s'` |
+| `@Cron(name?, expression, options?)` | [`cron()`](../defining-jobs/#cron-jobs-cron-cron) | A cron expression with 5 or 6 fields |
+| `@At(name?, when, options?)` | [`at()`](../defining-jobs/#one-off-jobs-at-at) | A `Date`, ms since 1970, or an ISO string |
 
 The options are the [job options](../job-options/) of that method (`timeoutMs`, `overlap`, `maxAttempts`, `catchUpMs`, `timezone`, [`data`](../run-data/) and the rest), plus two of the decorator's own:
 

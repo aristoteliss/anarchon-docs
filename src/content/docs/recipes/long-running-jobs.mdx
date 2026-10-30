@@ -3,9 +3,14 @@ title: Long-running jobs
 description: "Jobs that take minutes or hours: timeouts, checkpoints, and continuing after a takeover."
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 A job that runs for a long time is more likely to be interrupted by a deploy, a crash or a timeout. This recipe makes such a job stop quickly, and continue where it left off instead of starting over.
 
 ## The starting point
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 scheduler.every('export', '1h', async (ctx) => {
@@ -15,13 +20,32 @@ scheduler.every('export', '1h', async (ctx) => {
 });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.Every("export", TimeSpan.FromHours(1), async ctx =>
+{
+    foreach (var customer in await AllCustomersAsync())
+    {
+        await ExportCustomerAsync(customer, CancellationToken.None);
+    }
+});
+```
+
+</TabItem>
+</Tabs>
+
 Problems:
 
-1. It ignores `ctx.signal`. A deploy has to wait for the whole export, or kill it.
+1. It ignores `ctx.signal` (`ctx.CancellationToken`). A deploy has to wait for the whole export, or kill it.
 2. If it hangs, it blocks every later run forever.
 3. After a takeover, attempt 2 exports everything again.
 
 ## Step 1: stop when asked
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 scheduler.every('export', '1h', async (ctx) => {
@@ -32,21 +56,51 @@ scheduler.every('export', '1h', async (ctx) => {
 });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.Every("export", TimeSpan.FromHours(1), async ctx =>
+{
+    foreach (var customer in await AllCustomersAsync(ctx.CancellationToken))
+    {
+        ctx.CancellationToken.ThrowIfCancellationRequested();
+        await ExportCustomerAsync(customer, ctx.CancellationToken);
+    }
+});
+```
+
+</TabItem>
+</Tabs>
+
 Now a deploy interrupts the job between two customers, and the run is handed to another instance.
 
 ## Step 2: a timeout
 
-With `overlap: 'skip'`, a run that never ends blocks the job. Put a ceiling on it:
+With `overlap: 'skip'` (`OverlapPolicy.Skip`), a run that never ends blocks the job. Put a ceiling on it:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 scheduler.every('export', '1h', handler, { timeoutMs: 50 * 60_000 });
 ```
 
-When the timeout passes, `ctx.signal` aborts and the run is recorded as failed. Because the handler checks the signal, it actually stops.
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.Every("export", TimeSpan.FromHours(1), handler, new() { Timeout = TimeSpan.FromMinutes(50) });
+```
+
+</TabItem>
+</Tabs>
+
+When the timeout passes, `ctx.signal` aborts (the token is cancelled) and the run is recorded as failed. Because the handler checks the signal, it actually stops.
 
 ## Step 3: checkpoints
 
-anarchon restarts an interrupted run from the beginning of the handler. To continue from the middle, the **job** has to remember its progress. `ctx.slot` is the key: it is the same on every attempt of the same run.
+anarchon restarts an interrupted run from the beginning of the handler. To continue from the middle, the **job** has to remember its progress. `ctx.slot` (`ctx.Slot`) is the key: it is the same on every attempt of the same run.
 
 ```mermaid
 sequenceDiagram
@@ -61,6 +115,9 @@ sequenceDiagram
   B->>D: export customers 801-1200, save checkpoint 1200
   B->>D: done: delete the checkpoint
 ```
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 scheduler.every(
@@ -87,6 +144,34 @@ scheduler.every(
 );
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.Every("export", TimeSpan.FromHours(1), async ctx =>
+{
+    // Progress of THIS run. Attempt 2 finds what attempt 1 saved.
+    var after = await checkpoints.GetAsync("export", ctx.Slot, ctx.CancellationToken) ?? 0;
+
+    while (true)
+    {
+        ctx.CancellationToken.ThrowIfCancellationRequested();
+        var batch = await CustomersAfterAsync(after, 200, ctx.CancellationToken);
+        if (batch.Count == 0) break;
+
+        await ExportBatchAsync(batch, ctx.CancellationToken);
+
+        after = batch[^1].Id;
+        await checkpoints.SetAsync("export", ctx.Slot, after, ctx.CancellationToken);
+    }
+
+    await checkpoints.DeleteAsync("export", ctx.Slot, ctx.CancellationToken);
+}, new() { Timeout = TimeSpan.FromMinutes(50) });
+```
+
+</TabItem>
+</Tabs>
+
 A checkpoint table can be as small as this:
 
 ```sql
@@ -102,6 +187,9 @@ CREATE TABLE job_checkpoints (
 
 A batch can be exported and the instance die before the checkpoint is saved. The next attempt then repeats that batch. So the batch itself must be safe to repeat:
 
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
 ```ts
 async function exportBatch(batch: Customer[]) {
   for (const customer of batch) {
@@ -110,7 +198,26 @@ async function exportBatch(batch: Customer[]) {
 }
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+async Task ExportBatchAsync(IReadOnlyList<Customer> batch, CancellationToken cancellationToken)
+{
+    foreach (var customer in batch)
+    {
+        await warehouse.UpsertAsync("customers", customer, cancellationToken); // upsert, not insert
+    }
+}
+```
+
+</TabItem>
+</Tabs>
+
 ## Step 4: tell the attempts apart
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 if (ctx.attempt > 1) {
@@ -118,18 +225,33 @@ if (ctx.attempt > 1) {
 }
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+if (ctx.Attempt > 1)
+{
+    logger.LogWarning("export {ScheduledAt:O}: attempt {Attempt}, continuing after {After}", ctx.ScheduledAt, ctx.Attempt, after);
+}
+```
+
+</TabItem>
+</Tabs>
+
 ## Lease timing for long jobs
 
 The lease has nothing to do with how long the job runs. A job can run for hours with a 30-second lease, because the lease is renewed every few seconds for as long as the handler is alive.
 
 What does matter is that the event loop keeps turning. The heartbeat is a timer; a handler that blocks the thread for longer than `leaseMs` stops its own heartbeats and loses the run.
 
+In .NET the heartbeat runs on the thread pool, so a handler that blocks its own thread doesn't stop it. What can is thread-pool starvation: many handlers blocking pool threads with `.Result` or `Thread.Sleep` at once. Use `async` all the way, and `Task.Run` or a dedicated thread for long CPU work.
+
 ```ts
 // Blocks the thread: no heartbeat can be sent while this runs
 const result = hugeArray.map(expensiveSyncComputation);
 ```
 
-For heavy CPU work:
+For heavy CPU work in Node.js:
 
 - break it into chunks and yield between them (`await new Promise(setImmediate)`), or
 - move it to a worker thread and `await` its result, or
@@ -141,9 +263,9 @@ If "export" takes 90 minutes and runs hourly, every second run is skipped as an 
 
 | Situation | Option |
 | --- | --- |
-| The job sometimes overruns | Keep `overlap: 'skip'`; an occasional skipped run is fine |
+| The job sometimes overruns | Keep `overlap: 'skip'` (`OverlapPolicy.Skip`); an occasional skipped run is fine |
 | The job always overruns | Lengthen the interval |
-| Each run covers its own time window and must not be skipped | `overlap: 'allow'`, with each run working on `ctx.slot`'s window |
+| Each run covers its own time window and must not be skipped | `overlap: 'allow'` (`OverlapPolicy.Allow`), with each run working on `ctx.slot`'s window |
 
 ## Next
 

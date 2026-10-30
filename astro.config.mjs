@@ -31,6 +31,7 @@ const sidebar = [
     items: [
       'guides/defining-jobs',
       'guides/decorators',
+      'guides/attributes',
       'guides/job-options',
       'guides/scheduler-options',
       'guides/writing-handlers',
@@ -72,6 +73,8 @@ const sidebar = [
     items: [
       'recipes/express',
       'recipes/nestjs',
+      'recipes/aspnet-core',
+      'recipes/worker-service',
       'recipes/worker-and-api',
       'recipes/kubernetes',
       'recipes/long-running-jobs',
@@ -82,6 +85,11 @@ const sidebar = [
   {
     label: 'Reference',
     translations: { el: 'Αναφορά' },
+    items: ['reference/guarantees', 'reference/faq', 'reference/licensing'],
+  },
+  {
+    label: 'Reference: Node.js',
+    translations: { el: 'Αναφορά: Node.js' },
     items: [
       'reference/scheduler',
       'reference/decorators',
@@ -89,9 +97,18 @@ const sidebar = [
       'reference/events',
       'reference/types',
       'reference/errors',
-      'reference/guarantees',
-      'reference/licensing',
-      'reference/faq',
+    ],
+  },
+  {
+    label: 'Reference: .NET',
+    translations: { el: 'Αναφορά: .NET' },
+    items: [
+      'reference/dotnet/scheduler',
+      'reference/dotnet/attributes',
+      'reference/dotnet/options',
+      'reference/dotnet/events',
+      'reference/dotnet/hosting',
+      'reference/dotnet/errors',
     ],
   },
 ];
@@ -107,15 +124,20 @@ export default defineConfig({
     starlight({
       title: 'anarchon',
       description:
-        'Leaderless cron and interval scheduling for Node.js services, coordinated through your existing datastore.',
+        'Leaderless cron and interval scheduling for Node.js and .NET services, coordinated through your existing datastore.',
       defaultLocale: 'root',
       locales,
       sidebar,
       social: [
         {
           icon: 'github',
-          label: 'GitHub',
+          label: 'GitHub (Node.js)',
           href: 'https://github.com/aristoteliss/anarchon',
+        },
+        {
+          icon: 'github',
+          label: 'GitHub (.NET)',
+          href: 'https://github.com/aristoteliss/anarchon-dotnet',
         },
       ],
       head: [
@@ -127,7 +149,7 @@ export default defineConfig({
           attrs: {
             property: 'og:image:alt',
             content:
-              'anarchon: leaderless cron and interval scheduling for Node.js',
+              'anarchon: leaderless cron and interval scheduling for Node.js and .NET',
           },
         },
         { tag: 'meta', attrs: { name: 'twitter:image', content: socialCard } },

@@ -3,7 +3,9 @@ title: Guarantees and limits
 description: Exactly what anarchon promises, what it doesn't, and what that means for your jobs.
 ---
 
-A scheduler is easy to over-trust. This page states precisely what anarchon guarantees, and where the guarantee ends.
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+A scheduler is easy to over-trust. This page states precisely what anarchon guarantees, and where the guarantee ends. The guarantees are the same in Node.js and .NET; the page uses the Node.js option names, and [Options (.NET)](../dotnet/options/#the-nodejs-names) maps them.
 
 ## What is guaranteed
 
@@ -110,13 +112,17 @@ Run NTP or your platform's time sync.
 | Limit | Value |
 | --- | --- |
 | Shortest interval | 1 second |
-| `history()` limit | 1 to 10000 |
+| `history()`, `HistoryAsync()` limit | 1 to 10000 |
 | `maxAttempts` | 1 to 100 |
 | Stored error message | 2000 characters |
 | Longest internal timer | 1 minute, then the clock is re-read |
 | Node.js | 20 or newer |
+| .NET | 10 or newer |
 
 ## A handler written for these guarantees
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 scheduler.every(
@@ -138,11 +144,35 @@ scheduler.every(
 );
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.Every("settle-payments", TimeSpan.FromMinutes(5), async ctx =>
+{
+    // Everything unsettled up to this run's slot. The end is fixed, so every
+    // attempt covers the same payments. There is no start, so the next run
+    // also settles what a skipped run missed.
+    foreach (var payment in await UnsettledUpToAsync(ctx.ScheduledAt, ctx.CancellationToken))
+    {
+        await SettleAsync(payment, idempotencyKey: payment.Id, ctx.CancellationToken); // stops when asked, safe to repeat
+    }
+}, new()
+{
+    Timeout = TimeSpan.FromMinutes(4), // can't hang forever
+    MaxAttempts = 3,                   // retried if the runner dies
+});
+```
+
+</TabItem>
+</Tabs>
+
 ## Upgrades
 
 - **Rolling deploys within a major version are supported.** Instances on two releases of the same major version can share one store while the new one rolls out: data is only extended, and each version keeps the fields it doesn't know.
-- **The store records its format.** If a release ever has to change the layout in a way older versions can't read, its changelog says so, every instance must be stopped before the upgrade, and an older instance that meets the new data refuses to start (`ANARCHON_STORE_FORMAT`) instead of misreading it.
+- **The store records its format.** If a release ever has to change the layout in a way older versions can't read, its changelog says so, every instance must be stopped before the upgrade, and an older instance that meets the new data refuses to start (`ANARCHON_STORE_FORMAT`, `AnarchonErrorCode.StoreFormat` in .NET) instead of misreading it.
 - **Run one version on all instances of a service** once the deploy is done. Run times come from the cron library anarchon depends on, and instances must compute the same ones.
+- **Node.js and .NET instances can share a store and a job.** Both write the same store format. Interval jobs compute the same slots; for cron jobs, see [the note on croner and Cronos](../../guides/defining-jobs/#cron-jobs-cron-cron).
 
 ## Next
 

@@ -7,14 +7,15 @@ The rest of the documentation uses a small vocabulary. Each term is defined here
 
 ## Instance
 
-One running copy of your service: one process. Every instance creates its own `Scheduler` with the same jobs. Each has an `instanceId`, by default `hostname:pid`, which shows up in history so you can see who ran what.
+One running copy of your service: one process. Every instance creates its own `Scheduler` with the same jobs. Each has an instance ID (`instanceId`, `InstanceId` in .NET), by default `hostname:pid`, which shows up in history so you can see who ran what.
 
 ## Job
 
 A named piece of work with a schedule and a handler:
 
 ```ts
-scheduler.every('sync', '10s', async (ctx) => { /* the handler */ });
+scheduler.every('sync', '10s', async (ctx) => { /* the handler */ });                          // Node.js
+scheduler.Every("sync", TimeSpan.FromSeconds(10), async ctx => { /* the handler */ });        // .NET
 //               name   schedule
 ```
 
@@ -26,8 +27,8 @@ One scheduled time of a job, as milliseconds since 1970. "The 12:00:10 run of *s
 
 The slot is the heart of the design. Every instance computes the same slots from the same schedule, without talking to each other:
 
-- `every('10s')` uses a grid counted from 1970-01-01 UTC, so the slots are :00, :10, :20 whatever time each instance started.
-- `cron('0 8 * * *')` uses the cron expression in its time zone.
+- `every('10s')` (`Every(TimeSpan.FromSeconds(10))` in .NET) uses a grid counted from 1970-01-01 UTC, so the slots are :00, :10, :20 whatever time each instance started.
+- `cron('0 8 * * *')` (`Cron("0 8 * * *")`) uses the cron expression in its time zone.
 
 Because the slot is the same number everywhere, `(job name, slot)` names one run across the whole cluster. That pair is what instances compete for.
 
@@ -43,7 +44,7 @@ flowchart LR
 
 ## Run and attempt
 
-A **run** is one slot of one job. Usually a run is executed once. If the instance executing it dies, another instance starts it again: that is a second **attempt** of the same run. `ctx.attempt` is 1 for the first try, and 2 or more after a takeover.
+A **run** is one slot of one job. Usually a run is executed once. If the instance executing it dies, another instance starts it again: that is a second **attempt** of the same run. `ctx.attempt` (`ctx.Attempt`) is 1 for the first try, and 2 or more after a takeover.
 
 ## Claim
 
@@ -51,7 +52,7 @@ The request an instance sends to the store when a slot is due: "record that I am
 
 ## Jitter
 
-A random delay, between 0 and `jitterMs`, that each instance waits before claiming. Without it, the instance with the fastest clock would win every time. With it, a different instance tends to win each run, so work is spread.
+A random delay, between 0 and the jitter (`jitterMs`, `Jitter` in .NET), that each instance waits before claiming. Without it, the instance with the fastest clock would win every time. With it, a different instance tends to win each run, so work is spread.
 
 ```mermaid
 sequenceDiagram
@@ -77,7 +78,7 @@ The adapter between anarchon and a store. `RedisBackend`, `PostgresBackend`, `Sq
 
 ## Lease
 
-A promise with an expiry time, stored with the run: "instance B is running this, and it is alive until 12:00:40". While the job runs, the runner pushes that time forward every `heartbeatMs`. This is the **heartbeat**.
+A promise with an expiry time, stored with the run: "instance B is running this, and it is alive until 12:00:40". While the job runs, the runner pushes that time forward every heartbeat (`heartbeatMs`, `Heartbeat` in .NET). This is the **heartbeat**.
 
 If the runner dies, the heartbeats stop, the lease runs out, and the run becomes available for the next attempt.
 

@@ -1,9 +1,9 @@
 ---
 title: anarchon
-description: Leaderless cron and interval scheduling for Node.js services, coordinated through your existing datastore.
+description: Leaderless cron and interval scheduling for Node.js and .NET services, coordinated through your existing datastore.
 template: splash
 hero:
-  tagline: Leaderless cron and interval scheduling for Node.js services. Define the same jobs in every instance; an atomic claim in the store they share selects one runner for each run.
+  tagline: Leaderless cron and interval scheduling for Node.js and .NET services. Define the same jobs in every instance; an atomic claim in the store they share selects one runner for each run.
   actions:
     - text: Quick start
       link: getting-started/quick-start/
@@ -13,12 +13,15 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { Card, CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/components';
 
 [![npm version](https://img.shields.io/npm/v/anarchon.svg)](https://www.npmjs.com/package/anarchon)
 [![npm downloads](https://img.shields.io/npm/dm/anarchon.svg)](https://www.npmjs.com/package/anarchon)
 [![node](https://img.shields.io/node/v/anarchon.svg)](https://www.npmjs.com/package/anarchon)
 [![license](https://img.shields.io/badge/license-AGPL--3.0%20or%20commercial-blue.svg)](https://github.com/aristoteliss/anarchon#license-and-commercial-use)
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 import { RedisBackend, Scheduler } from 'anarchon';
@@ -32,7 +35,29 @@ scheduler
 await scheduler.start();
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+using Anarchon;
+using Anarchon.Redis;
+
+await using var scheduler = new Scheduler(new SchedulerOptions { Backend = new RedisBackend("localhost:6379") });
+
+scheduler
+    .Every("sync", TimeSpan.FromSeconds(10), async ctx => { /* ... */ })
+    .Cron("digest", "0 8 * * 1-5", async ctx => { /* ... */ }, new() { TimeZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Athens") });
+
+await scheduler.StartAsync();
+```
+
+</TabItem>
+</Tabs>
+
 Run that code in three instances, and one instance runs "sync" every 10 seconds, not all three.
+The Node.js package (`anarchon` on npm) and the .NET package (`Anarchon` on NuGet) share the
+algorithm and the stored data, so Node.js and .NET instances can even share jobs. Pick your
+language in any code tab; every page follows.
 
 ```mermaid
 flowchart LR
@@ -67,7 +92,7 @@ flowchart LR
   </Card>
   <Card title="Catch-up after downtime" icon="rocket">
     On lease backends, the latest run that was due while every instance was down runs when the first
-    one comes back, if it was due within `catchUpMs` (5 minutes by default). Older runs are not replayed.
+    one comes back, if it was due within the catch-up window (`catchUpMs` in Node.js, `CatchUp` in .NET; 5 minutes by default). Older runs are not replayed.
   </Card>
 </CardGrid>
 
@@ -79,8 +104,10 @@ anarchon does not guarantee exactly-once side effects. [Guarantees and limits](r
   <LinkCard title="Introduction" description="The problem, in plain words, and how anarchon solves it." href="getting-started/introduction/" />
   <LinkCard title="Quick start" description="A working scheduler in five minutes, with no server to install." href="getting-started/quick-start/" />
   <LinkCard title="Guides" description="Every option, method and lifecycle step, with examples." href="guides/defining-jobs/" />
-  <LinkCard title="Decorators" description="Declare jobs with @Every, @Cron and @At on the methods of a class." href="guides/decorators/" />
+  <LinkCard title="Decorators (Node.js)" description="Declare jobs with @Every, @Cron and @At on the methods of a class." href="guides/decorators/" />
+  <LinkCard title="Attributes (.NET)" description="Declare jobs with [Every], [Cron] and [At], and add them with AddJobs<T>()." href="guides/attributes/" />
   <LinkCard title="How it works" description="The claim and lease algorithms, step by step, with diagrams." href="internals/architecture/" />
   <LinkCard title="Backends" description="Redis, Valkey, PostgreSQL, SQLite, RabbitMQ and NATS." href="backends/overview/" />
-  <LinkCard title="Recipes" description="Express, NestJS, workers, Kubernetes, long jobs." href="recipes/express/" />
+  <LinkCard title="Recipes" description="Express, NestJS, ASP.NET Core, worker services, Kubernetes, long jobs." href="recipes/express/" />
+  <LinkCard title=".NET reference" description="The Scheduler, its options, attributes, events, hosting and errors in .NET." href="reference/dotnet/scheduler/" />
 </CardGrid>

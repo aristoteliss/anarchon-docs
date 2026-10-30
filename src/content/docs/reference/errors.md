@@ -3,6 +3,10 @@ title: Errors
 description: The errors anarchon throws, what each means, and how to fix it.
 ---
 
+:::note[Node.js]
+This page describes the Node.js package. For .NET, see [Errors (.NET)](../dotnet/errors/).
+:::
+
 anarchon checks settings early and says what is wrong. Errors come at three moments.
 
 | When | What |

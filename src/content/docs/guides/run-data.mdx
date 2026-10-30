@@ -1,0 +1,230 @@
+---
+title: Run data
+description: Give a job's runs the data they need, such as a permission, a tenant or a fresh token, and read it in the handler as ctx.data (ctx.Data, ctx.GetData<T>() in .NET).
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+A handler is an ordinary function, so it can use whatever is in scope around it. The data option (`data`, `Data`) is for what isn't: values you decide where the job is defined or where the scheduler is created, and want in the handler when a run starts.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
+```ts
+const scheduler = new Scheduler({ backend, data: { tenant: 'acme' } });
+
+scheduler.every('export', '1h', async (ctx: JobContext<{ tenant: string; permission: string }>) => {
+  await exportFor(ctx.data.tenant, ctx.data.permission);
+}, { data: { permission: 'reports:export' } });
+```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+var scheduler = new Scheduler(new SchedulerOptions { Backend = backend, Data = new Dictionary<string, object?> { ["tenant"] = "acme" } });
+
+scheduler.Every("export", TimeSpan.FromHours(1), async ctx =>
+{
+    var data = ctx.GetData<IReadOnlyDictionary<string, object?>>();
+    await ExportForAsync((string)data["tenant"]!, (string)data["permission"]!, ctx.CancellationToken);
+}, new() { Data = new Dictionary<string, object?> { ["permission"] = "reports:export" } });
+```
+
+</TabItem>
+</Tabs>
+
+Each run receives it as `ctx.data` (`ctx.Data`). It is `undefined` (`null`) when you gave none.
+
+## Where the data comes from
+
+| Given in | Applies to | Example |
+| --- | --- | --- |
+| The scheduler's options | Every job of the scheduler | `new Scheduler({ data: ... })`; `SchedulerOptions.Data` |
+| Register defaults | Every job of one decorated object | `register(object, { defaults: { data } })`; `Register(object, new RegisterOptions { Defaults = new() { Data = ... } })` |
+| A job's options | That job | `{ data: ... }`; `new() { Data = ... }` |
+| A decorator (Node.js) | That job | `@Every('export', '1h', { data: ... })` |
+| A manual run | One manual run | `runNow('export', { data: ... })`; `RunNowAsync("export", data)` |
+
+They are layers, from the most general to the most specific, in the order of the table. Two plain objects (in .NET, two `IReadOnlyDictionary<string, object?>` such as a `Dictionary<string, object?>`) are merged, and the more specific one's keys win. Any other value (a string, a number, an array, a class or record instance) replaces what is under it.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
+```ts
+const scheduler = new Scheduler({ backend, data: { tenant: 'acme', region: 'eu' } });
+scheduler.every('export', '1h', run, { data: { region: 'us', permission: 'export' } });
+
+await scheduler.runNow('export');
+// ctx.data: { tenant: 'acme', region: 'us', permission: 'export' }
+
+await scheduler.runNow('export', { data: { permission: 'admin' } });
+// ctx.data: { tenant: 'acme', region: 'us', permission: 'admin' }
+```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+var scheduler = new Scheduler(new SchedulerOptions { Backend = backend, Data = new Dictionary<string, object?> { ["tenant"] = "acme", ["region"] = "eu" } });
+scheduler.Every("export", TimeSpan.FromHours(1), RunAsync, new() { Data = new Dictionary<string, object?> { ["region"] = "us", ["permission"] = "export" } });
+
+await scheduler.RunNowAsync("export");
+// ctx.Data: { tenant = acme, region = us, permission = export }
+
+await scheduler.RunNowAsync("export", new Dictionary<string, object?> { ["permission"] = "admin" });
+// ctx.Data: { tenant = acme, region = us, permission = admin }
+```
+
+</TabItem>
+</Tabs>
+
+## Reading it when the run starts
+
+The data can be a function (in .NET, a `JobDataProvider`). It is called when each run starts, so the handler gets the value as it is at that moment: a token that expires, the permissions a user has now, a feature flag.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
+```ts
+scheduler.every('sync', '5m', sync, {
+  data: async (run) => ({
+    token: await auth.tokenFor('sync-service'),   // fresh for this run
+    startedBy: run.manual ? 'operator' : 'schedule',
+  }),
+});
+```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.Every("sync", TimeSpan.FromMinutes(5), SyncAsync, new()
+{
+    Data = new JobDataProvider(async run => new Dictionary<string, object?>
+    {
+        ["token"] = await auth.TokenForAsync("sync-service"),   // fresh for this run
+        ["startedBy"] = run.IsManual ? "operator" : "schedule",
+    }),
+});
+```
+
+</TabItem>
+</Tabs>
+
+The function receives the run: everything in [`ctx`](../writing-handlers/#the-context-ctx) except the data itself, including its cancellation. It may be async (in .NET it returns a `ValueTask<object?>`).
+
+| If the function | Then |
+| --- | --- |
+| Throws or rejects | The run fails with that error, like a handler that throws. The handler isn't called |
+| Is slower than the job's timeout | The run times out |
+
+:::note[A function is always called]
+To pass a function as the data itself, put it in an object: `{ data: { notify: sendMail } }`. In .NET only a `JobDataProvider` is called; any other delegate is plain data.
+:::
+
+## Changing it while the scheduler runs
+
+`setData()` (`SetData()`) replaces the scheduler's data. Runs that start afterwards get the new one; runs in progress keep theirs.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
+```ts
+scheduler.setData({ tenant: 'acme', features: await loadFeatures() });
+events.on('features-changed', (features) => scheduler.setData({ tenant: 'acme', features }));
+```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.SetData(new Dictionary<string, object?> { ["tenant"] = "acme", ["features"] = await LoadFeaturesAsync() });
+featureFlags.Changed += (_, features) => scheduler.SetData(new Dictionary<string, object?> { ["tenant"] = "acme", ["features"] = features });
+```
+
+</TabItem>
+</Tabs>
+
+For a single run, pass data to the manual run:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
+```ts
+app.post('/jobs/:name/run', async (req, res) => {
+  const run = await scheduler.runNow(req.params.name, { data: { requestedBy: req.user.id } });
+  res.json({ status: run.status });
+});
+```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+app.MapPost("/jobs/{name}/run", async (string name, ClaimsPrincipal user, Scheduler scheduler) =>
+{
+    var run = await scheduler.RunNowAsync(name, new Dictionary<string, object?> { ["requestedBy"] = user.Identity?.Name });
+    return new { status = run.Status.ToString() };
+});
+```
+
+</TabItem>
+</Tabs>
+
+## Typing it
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
+`ctx.data` is `unknown` unless you say what it is. Name the type in the handler:
+
+</TabItem>
+<TabItem label=".NET">
+
+`ctx.Data` is an `object?`. Read it as the type you gave with `ctx.GetData<T>()`, which throws an `InvalidOperationException` that names both types when it is something else (the run then fails). A record of your own reads best; dictionaries are for data that is merged from layers:
+
+```csharp
+public sealed record ExportData(string Tenant, string Permission);
+
+scheduler.Every("export", TimeSpan.FromHours(1), ctx =>
+{
+    var data = ctx.GetData<ExportData>(); // ExportData
+    return ExportForAsync(data.Tenant, data.Permission, ctx.CancellationToken);
+}, new() { Data = new ExportData("acme", "reports:export") });
+```
+
+</TabItem>
+</Tabs>
+
+```ts
+interface ExportData {
+  tenant: string;
+  permission: string;
+}
+
+scheduler.every('export', '1h', async (ctx: JobContext<ExportData>) => {
+  ctx.data.tenant; // string
+});
+
+class Reports {
+  @Every('export', '1h')
+  async export(ctx: JobContext<ExportData>) {}
+}
+```
+
+In TypeScript the type is your statement about what you configured: anarchon doesn't check the value against it.
+
+## What run data is not
+
+- **Not shared between instances.** Each instance builds the data of the runs it executes, from its own settings. Give every instance the same ones, like the jobs themselves.
+- **Not stored.** It isn't written to the store or to history, so it can hold secrets and objects such as a database client.
+- **Not a per-run payload from another instance.** A run is defined by its time, not by a message. To hand work from one place to another, use a queue.
+
+Runnable examples: [`examples/run-data.ts`](https://github.com/aristoteliss/anarchon/blob/main/examples/run-data.ts) (`pnpm example:run-data`) and [`examples/RunData`](https://github.com/aristoteliss/anarchon-dotnet/tree/main/examples/RunData) (`dotnet run --project examples/RunData`).
+
+## Next
+
+- [Writing handlers](../writing-handlers/): the rest of `ctx`
+- [Decorators](../decorators/) and [attributes](../attributes/): data on declared jobs and objects
+- [Scheduler API](../../reference/scheduler/#setdatadata)

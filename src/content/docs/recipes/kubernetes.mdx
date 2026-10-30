@@ -3,6 +3,8 @@ title: Rolling deploys on Kubernetes
 description: Stop pods cleanly so a running job is handed to another pod, and name instances after pods.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 A rolling deploy stops pods one by one while new ones start. For a scheduler this is the most common "failure", and it should be a non-event: the pod being stopped hands its running job to another pod.
 
 ## What should happen
@@ -26,9 +28,12 @@ sequenceDiagram
 
 Three things make that work.
 
-## 1. Call `stop()` on SIGTERM
+## 1. Stop the scheduler on SIGTERM
 
-Kubernetes sends `SIGTERM`, waits `terminationGracePeriodSeconds`, then sends `SIGKILL`.
+Kubernetes sends `SIGTERM`, waits `terminationGracePeriodSeconds`, then sends `SIGKILL`. In Node.js you call `stop()` yourself; in a .NET host, the host does it.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 const shutdown = async () => {
@@ -39,8 +44,24 @@ const shutdown = async () => {
 process.on('SIGTERM', shutdown);
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+// The generic host stops on SIGTERM, and stops the scheduler that AddAnarchon() registered:
+// running jobs are cancelled and handed over. It waits up to StopTimeout, and no longer than
+// the host's own ShutdownTimeout (30 s by default).
+builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(25));
+builder.Services.AddAnarchon(options => options.StopTimeout = TimeSpan.FromSeconds(20))
+    .UseRedis(builder.Configuration.GetConnectionString("redis")!)
+    .AddJobs<BillingJobs>();
+```
+
+</TabItem>
+</Tabs>
+
 :::caution[PID 1]
-If your container starts Node through `npm start` or a shell script, the signal may never reach Node. Start it directly (`CMD ["node", "dist/main.js"]`), or use an init such as `tini`.
+If your container starts Node through `npm start` or a shell script, the signal may never reach Node. Start it directly (`CMD ["node", "dist/main.js"]`), or use an init such as `tini`. The same holds for .NET: `ENTRYPOINT ["dotnet", "Billing.dll"]`, not a shell script.
 :::
 
 ## 2. Give it enough time
@@ -69,7 +90,7 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
-            - name: REDIS_URL
+            - name: REDIS_URL                 # .NET: ConnectionStrings__redis
               valueFrom:
                 secretKeyRef:
                   name: billing-secrets
@@ -78,14 +99,18 @@ spec:
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| `stop({ timeoutMs })` | 20 s | How long to wait for handlers to stop |
+| `stop({ timeoutMs })`, `StopTimeout` | 20 s | How long to wait for handlers to stop |
+| `HostOptions.ShutdownTimeout` (.NET) | 25 s | The host's limit for all its services; at least the stop timeout |
 | `terminationGracePeriodSeconds` | 30 s | Must be longer, or the pod is killed mid-stop |
 
-If the pod is killed before `stop()` finishes, nothing breaks, but the job isn't handed over: a backup takes it over after the lease runs out instead of within two heartbeats.
+If the pod is killed before `stop()` (`StopAsync()`) finishes, nothing breaks, but the job isn't handed over: a backup takes it over after the lease runs out instead of within two heartbeats.
 
 ## 3. Handlers that stop when asked
 
-`stop()` aborts `ctx.signal`. A handler that throws at that point is handed over at once. One that ignores the signal holds the pod until the stop timeout.
+`stop()` aborts `ctx.signal` (in .NET, cancels `ctx.CancellationToken`). A handler that throws at that point is handed over at once. One that ignores the signal holds the pod until the stop timeout.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 scheduler.every('export', '15m', async (ctx) => {
@@ -96,13 +121,42 @@ scheduler.every('export', '15m', async (ctx) => {
 });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.Every("export", TimeSpan.FromMinutes(15), async ctx =>
+{
+    foreach (var batch in await LoadBatchesAsync(ctx.Slot))
+    {
+        await ExportBatchAsync(batch, ctx.CancellationToken); // throws OperationCanceledException when stopped
+    }
+});
+```
+
+</TabItem>
+</Tabs>
+
 ## Name instances after pods
 
-The default `instanceId` is `hostname:pid`. In a container the hostname is already the pod name, so the default reads like `billing-7d9f8c-x2x4q:1`. Passing the pod name explicitly is tidier:
+The default `instanceId` (`InstanceId`) is `hostname:pid`. In a container the hostname is already the pod name, so the default reads like `billing-7d9f8c-x2x4q:1`. Passing the pod name explicitly is tidier:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 new Scheduler({ backend: new RedisBackend({ redis: process.env.REDIS_URL }), instanceId: process.env.POD_NAME });
 ```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+builder.Services.AddAnarchon(options => options.InstanceId = Environment.GetEnvironmentVariable("POD_NAME"));
+```
+
+</TabItem>
+</Tabs>
 
 History then shows which pod ran each run:
 
@@ -140,10 +194,10 @@ If you want a signal that the scheduler itself is alive, expose one that checks 
 
 ## A checklist
 
-- [ ] `scheduler.stop()` runs on `SIGTERM`
-- [ ] Node receives the signal (it is PID 1, or there is an init)
+- [ ] `scheduler.stop()` runs on `SIGTERM` (in .NET, the host does it)
+- [ ] Node or `dotnet` receives the signal (it is PID 1, or there is an init)
 - [ ] `terminationGracePeriodSeconds` is longer than the stop timeout
-- [ ] Handlers check `ctx.signal`
+- [ ] Handlers check `ctx.signal` (`ctx.CancellationToken`)
 - [ ] At least two replicas
 - [ ] `instanceId` is the pod name
 

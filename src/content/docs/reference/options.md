@@ -3,6 +3,10 @@ title: Options
 description: Every option of the scheduler, of jobs and of each backend, in one place.
 ---
 
+:::note[Node.js]
+This page describes the Node.js package. For .NET, see [Options (.NET)](../dotnet/options/).
+:::
+
 All options at a glance. Each links to the guide that explains it.
 
 ## Scheduler options

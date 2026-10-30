@@ -3,6 +3,10 @@ title: Types
 description: The TypeScript types the package exports.
 ---
 
+:::note[Node.js]
+This page describes the Node.js package. For .NET, see [the .NET reference](../dotnet/scheduler/).
+:::
+
 All types are exported from the package root.
 
 ```ts

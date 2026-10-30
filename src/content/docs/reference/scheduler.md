@@ -3,6 +3,10 @@ title: Scheduler
 description: Every method and property of the Scheduler class.
 ---
 
+:::note[Node.js]
+This page describes the Node.js package. For .NET, see [Scheduler (.NET)](../dotnet/scheduler/).
+:::
+
 ```ts
 import { Scheduler } from 'anarchon';
 ```

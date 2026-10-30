@@ -23,6 +23,14 @@ A queue distributes many pieces of work to workers. anarchon decides which insta
 
 Yes. It behaves like a normal scheduler, and you get history, plus overlap protection and catch-up after restarts on a lease backend. It is also ready for the day you add a second instance.
 
+### Is there a .NET version?
+
+Yes: [anarchon-dotnet](https://github.com/aristoteliss/anarchon-dotnet), with the same backends, options and guarantees, on .NET 10. These docs cover both; code samples have a Node.js and a .NET tab.
+
+### Can Node.js and .NET instances share jobs?
+
+Yes. Both versions write the same store format, so a Node.js instance and a .NET instance with the same namespace compete for the same runs, and see each other's history. Keep the job definitions the same on both. Cron expressions are computed by different libraries (croner and Cronos), which agree on standard expressions.
+
 ### Which Node versions are supported?
 
 Node.js 20 and newer. The built-in SQLite driver needs Node 22.13 (or 22.5 with the `--experimental-sqlite` flag); on older versions use `better-sqlite3` (version 12 on Node 20).
@@ -51,11 +59,11 @@ Yes, when its runner dies or freezes mid-run and a backup starts it again. Use `
 
 ### How do I run a job right now?
 
-`await scheduler.runNow('name')`. It runs on the instance you call it on, isn't deduplicated, and is recorded as a manual run.
+`await scheduler.runNow('name')` (`RunNowAsync("name")` in .NET). It runs on the instance you call it on, isn't deduplicated, and is recorded as a manual run.
 
 ### Can I change a job's schedule without a restart?
 
-`scheduler.remove('name')`, then add it again with the new schedule. Do it on every instance.
+`scheduler.remove('name')` (`Remove("name")`), then add it again with the new schedule. Do it on every instance.
 
 ### Can jobs be added after `start()`?
 
@@ -67,7 +75,7 @@ Handlers are ordinary functions, so they can close over what they need. For data
 
 ### Can I declare jobs with decorators, as in NestJS?
 
-Yes, with `@Every`, `@Cron` and `@At` on the methods of any class, with or without a framework. An object adds its jobs to the scheduler when it is created, so there is nothing to register. See [Decorators](../../guides/decorators/).
+Yes, with `@Every`, `@Cron` and `@At` on the methods of any class, with or without a framework. An object adds its jobs to the scheduler when it is created, so there is nothing to register. See [Decorators](../../guides/decorators/). In .NET the same attributes, `[Every]`, `[Cron]` and `[At]`, are added with `AddJobs<T>()` or `Register()`; see [Attributes](../../guides/attributes/).
 
 ### Do I have to create a scheduler to use the decorators?
 
@@ -143,15 +151,15 @@ Not with a plain file. Use a libSQL server or Turso, or PostgreSQL.
 
 ### How do I stop cleanly during a deploy?
 
-Call `await scheduler.stop()` on `SIGTERM`, and make handlers throw when `ctx.signal` aborts. The run is handed to another instance. See [Rolling deploys on Kubernetes](../../recipes/kubernetes/).
+Call `await scheduler.stop()` on `SIGTERM` (a .NET host does it for you), and make handlers throw when `ctx.signal` aborts (`ctx.CancellationToken` in .NET). The run is handed to another instance. See [Rolling deploys on Kubernetes](../../recipes/kubernetes/).
 
 ### How do I see what ran?
 
-`scheduler.history('name')` returns the runs from all instances. `log: true` prints a line per event on each instance.
+`scheduler.history('name')` (`HistoryAsync("name")`) returns the runs from all instances. `log: true` prints a line per event on each instance; in .NET, the scheduler logs to its `LoggerFactory`.
 
 ### How do I monitor it?
 
-Count `failure`, `lost` and non-`taken` `skip` events as metrics, and alert on `lastRun()` being too old or failed. See [Events and logging](../../guides/events-and-logging/#metrics).
+Count `failure`, `lost` and non-`taken` `skip` events as metrics (`Failed`, `Lost` and `Skipped` in .NET), and alert on `lastRun()` being too old or failed. See [Events and logging](../../guides/events-and-logging/#metrics).
 
 ### How much load does it put on the store?
 
@@ -165,4 +173,4 @@ The keys, tables and message formats are internal and may change between version
 
 ### What is the license?
 
-anarchon is dual-licensed: GNU AGPLv3, or a commercial license for applications that can't be released under the AGPL. The repository's `LICENSE` and `COMMERCIAL_LICENSE.txt` files have the terms, and [Licensing](../licensing/) summarizes them: the revenue tiers, how to register for the free tier, and who to contact.
+anarchon, in Node.js and .NET, is dual-licensed: GNU AGPLv3, or a commercial license for applications that can't be released under the AGPL. The repository's `LICENSE` and `COMMERCIAL_LICENSE.txt` files have the terms, and [Licensing](../licensing/) summarizes them: the revenue tiers, how to register for the free tier, and who to contact.

@@ -3,6 +3,10 @@ title: Decorators
 description: "@Every, @Cron, @At and @Scheduled, with Scheduler.configure(), get(), register() and the rest: signatures, examples and what to watch for."
 ---
 
+:::note[Node.js]
+This page describes the Node.js package. For .NET, see [Attributes (.NET)](../dotnet/attributes/).
+:::
+
 ```ts
 import { At, Cron, Every, Scheduled, Scheduler } from 'anarchon';
 ```

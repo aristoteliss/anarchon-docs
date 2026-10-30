@@ -3,7 +3,12 @@ title: SQLite and libSQL
 description: The full feature set with no server, for one machine, or with a libSQL server for several.
 ---
 
-`SqliteBackend` gives you the full feature set (backups, no overlapping runs, catch-up, hand-over) with no server to run. It needs SQLite 3.35 or newer.
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+`SqliteBackend` gives you the full feature set (backups, no overlapping runs, catch-up, hand-over) with no server to run. It needs SQLite 3.35 or newer. In .NET it is the `Anarchon.Sqlite` package, on Microsoft.Data.Sqlite, which brings its own SQLite; it needs 3.24 or newer and works with files only, not libSQL.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 import { Scheduler, SqliteBackend } from 'anarchon';
@@ -13,19 +18,38 @@ const scheduler = new Scheduler({
 });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+using Anarchon;
+using Anarchon.Sqlite;
+
+var scheduler = new Scheduler(new SchedulerOptions
+{
+    Backend = new SqliteBackend("Data Source=/var/lib/myapp/jobs.db"),
+});
+```
+
+</TabItem>
+</Tabs>
+
 ## When it fits
 
 A SQLite file coordinates the processes that open **that same file**.
 
 | Setup | Works? |
 | --- | --- |
-| Several processes on one machine (PM2, Node cluster, several containers sharing a volume) | Yes |
+| Several processes on one machine (PM2, Node cluster, systemd services, several containers sharing a volume) | Yes |
 | Development and tests | Yes, with nothing to install |
 | Several machines, each with its own disk | **No**: each machine would have its own file and run every job |
 | Several machines on a network file system (NFS) | **No**: SQLite's file locks are not reliable there |
-| Several machines with a libSQL server or Turso | Yes, see [below](#several-machines-a-libsql-server) |
+| Several machines with a libSQL server or Turso | Node.js only, see [below](#several-machines-a-libsql-server) |
 
-## Drivers
+## Drivers and options
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 `database` accepts a file path or a database object you already have.
 
@@ -50,7 +74,7 @@ import { DatabaseSync } from 'node:sqlite';
 new SqliteBackend({ database: new DatabaseSync('./jobs.db') });
 ```
 
-## Options
+**Options**
 
 | Option | Default | Meaning |
 | --- | --- | --- |
@@ -68,9 +92,34 @@ new SqliteBackend({ database: db });
 
 `busy_timeout` is set from `busyTimeoutMs` in both cases.
 
+</TabItem>
+<TabItem label=".NET">
+
+`ConnectionString` takes a Microsoft.Data.Sqlite connection string that names a file. An in-memory or temporary database is refused with an `ArgumentException`, since only one connection could see it.
+
+```csharp
+// The default is "Data Source=anarchon.db", in the working directory
+new SqliteBackend("Data Source=jobs.db");
+
+// Wait up to 10 seconds for another process's write, and use another table
+new SqliteBackend(new SqliteBackendOptions { ConnectionString = "Data Source=/var/lib/myapp/jobs.db;Default Timeout=10", Table = "cron_runs" });
+```
+
+**Options**
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `ConnectionString` | `"Data Source=anarchon.db"` | A connection string naming a file. Its `Default Timeout` (30 seconds unless set) is how long a write waits for another process's write before failing |
+| `Table` | `"anarchon_runs"` | Table name, without a schema |
+
+The backend switches the file to WAL mode on start, so readers don't block the writer, and sets `busy_timeout` on every connection from the `Default Timeout`. On `StopAsync()` it clears the connection pool of that file, so SQLite folds the write-ahead log back into it.
+
+</TabItem>
+</Tabs>
+
 ## Tables
 
-Created on `start()`:
+Created on `start()` (`StartAsync()`):
 
 | Table | One row per | Holds |
 | --- | --- | --- |
@@ -89,7 +138,7 @@ sequenceDiagram
   participant F as jobs.db
   A->>F: BEGIN IMMEDIATE (takes the write lock)
   B->>F: BEGIN IMMEDIATE
-  Note over B,F: B waits, up to busyTimeoutMs
+  Note over B,F: B waits, up to busyTimeoutMs (Default Timeout)
   A->>F: SELECT the run: no row
   A->>F: INSERT the run: attempt 1, token a1, lease end
   A->>F: COMMIT
@@ -105,6 +154,8 @@ Two claims can't interleave, so the second always sees what the first wrote.
 A backup checking on a live run only reads; it takes the write lock only when the lease has run out. Heartbeats and "finished" are single statements.
 
 ## Several machines: a libSQL server
+
+This section is about Node.js. The .NET backend works with SQLite files only; on several machines, use PostgreSQL or Redis.
 
 [libSQL](https://github.com/tursodatabase/libsql) is a fork of SQLite that can run as a server (`sqld`), and [Turso](https://turso.tech) hosts it. Pass a remote client and every machine shares one database:
 
@@ -131,7 +182,7 @@ For several machines, PostgreSQL or Redis is the sturdier choice if you have eit
 
 ## One process, several schedulers
 
-SQLite drivers block the thread while they wait for a lock. anarchon therefore runs every SQLite statement in a process through one queue, so two schedulers in the same process (for example in tests) can't deadlock each other. You don't need to do anything for this.
+SQLite drivers block the thread while they wait for a lock. anarchon therefore runs every SQLite statement in a process through one queue, so two schedulers in the same process (for example in tests) can't deadlock each other. You don't need to do anything for this. In .NET, each statement runs on a pooled connection of its own and waits for the lock without blocking other schedulers.
 
 ## Backups and the file
 
