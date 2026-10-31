@@ -3,9 +3,14 @@ title: "Μακροχρόνιες εργασίες"
 description: "Εργασίες που διαρκούν λεπτά ή ώρες: χρονικά όρια (timeouts), σημεία ελέγχου (checkpoints) και συνέχιση μετά από ανάληψη (takeover)."
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 Μια εργασία που εκτελείται για μεγάλο χρονικό διάστημα είναι πιο πιθανό να διακοπεί από ένα deploy, μια κατάρρευση ή ένα timeout. Αυτή η συνταγή δείχνει πώς μια τέτοια εργασία μπορεί να σταματήσει γρήγορα, και να συνεχίσει από εκεί που σταμάτησε αντί να ξεκινά από την αρχή.
 
 ## Το σημείο εκκίνησης
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 scheduler.every('export', '1h', async (ctx) => {
@@ -15,13 +20,32 @@ scheduler.every('export', '1h', async (ctx) => {
 });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.Every("export", TimeSpan.FromHours(1), async ctx =>
+{
+    foreach (var customer in await AllCustomersAsync())
+    {
+        await ExportCustomerAsync(customer, CancellationToken.None);
+    }
+});
+```
+
+</TabItem>
+</Tabs>
+
 Προβλήματα:
 
-1. Αγνοεί το `ctx.signal`. Ένα deploy πρέπει να περιμένει ολόκληρη την εξαγωγή ή να τη σκοτώσει (kill).
+1. Αγνοεί το `ctx.signal` (`ctx.CancellationToken`). Ένα deploy πρέπει να περιμένει ολόκληρη την εξαγωγή ή να τη σκοτώσει (kill).
 2. Εάν παγώσει (hangs), μπλοκάρει κάθε μετέπειτα εκτέλεση για πάντα.
 3. Μετά από μια ανάληψη (takeover), η προσπάθεια 2 εξάγει τα πάντα ξανά.
 
 ## Βήμα 1: διακοπή όταν ζητηθεί
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 scheduler.every('export', '1h', async (ctx) => {
@@ -32,21 +56,51 @@ scheduler.every('export', '1h', async (ctx) => {
 });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.Every("export", TimeSpan.FromHours(1), async ctx =>
+{
+    foreach (var customer in await AllCustomersAsync(ctx.CancellationToken))
+    {
+        ctx.CancellationToken.ThrowIfCancellationRequested();
+        await ExportCustomerAsync(customer, ctx.CancellationToken);
+    }
+});
+```
+
+</TabItem>
+</Tabs>
+
 Τώρα ένα deploy διακόπτει την εργασία μεταξύ δύο πελατών, και η εκτέλεση παραδίδεται (hand-over) σε άλλο instance.
 
 ## Βήμα 2: ένα χρονικό όριο (timeout)
 
-Με `overlap: 'skip'`, μια εκτέλεση που δεν τελειώνει ποτέ μπλοκάρει την εργασία. Ορίστε ένα ανώτατο όριο:
+Με `overlap: 'skip'` (`OverlapPolicy.Skip`), μια εκτέλεση που δεν τελειώνει ποτέ μπλοκάρει την εργασία. Ορίστε ένα ανώτατο όριο:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 scheduler.every('export', '1h', handler, { timeoutMs: 50 * 60_000 });
 ```
 
-Όταν παρέλθει το χρονικό όριο, το `ctx.signal` ακυρώνεται και η εκτέλεση καταγράφεται ως αποτυχημένη. Επειδή ο handler ελέγχει το σήμα, σταματά πράγματι.
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.Every("export", TimeSpan.FromHours(1), handler, new() { Timeout = TimeSpan.FromMinutes(50) });
+```
+
+</TabItem>
+</Tabs>
+
+Όταν παρέλθει το χρονικό όριο, το `ctx.signal` ακυρώνεται (το token ακυρώνεται) και η εκτέλεση καταγράφεται ως αποτυχημένη. Επειδή ο handler ελέγχει το σήμα, σταματά πράγματι.
 
 ## Βήμα 3: σημεία ελέγχου (checkpoints)
 
-Το anarchon επανεκκινεί μια διακοπείσα εκτέλεση από την αρχή του handler. Για να συνεχίσει από τη μέση, η ίδια η **εργασία** πρέπει να θυμάται την πρόοδό της. Το `ctx.slot` είναι το κλειδί: είναι το ίδιο σε κάθε προσπάθεια της ίδιας εκτέλεσης.
+Το anarchon επανεκκινεί μια διακοπείσα εκτέλεση από την αρχή του handler. Για να συνεχίσει από τη μέση, η ίδια η **εργασία** πρέπει να θυμάται την πρόοδό της. Το `ctx.slot` (`ctx.Slot`) είναι το κλειδί: είναι το ίδιο σε κάθε προσπάθεια της ίδιας εκτέλεσης.
 
 ```mermaid
 sequenceDiagram
@@ -61,6 +115,9 @@ sequenceDiagram
   B->>D: εξαγωγή πελατών 801-1200, αποθήκευση checkpoint 1200
   B->>D: ολοκλήρωση: διαγραφή του checkpoint
 ```
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 scheduler.every(
@@ -87,6 +144,34 @@ scheduler.every(
 );
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.Every("export", TimeSpan.FromHours(1), async ctx =>
+{
+    // Πρόοδος ΑΥΤΗΣ της εκτέλεσης. Η προσπάθεια 2 βρίσκει ό,τι αποθήκευσε η προσπάθεια 1.
+    var after = await checkpoints.GetAsync("export", ctx.Slot, ctx.CancellationToken) ?? 0;
+
+    while (true)
+    {
+        ctx.CancellationToken.ThrowIfCancellationRequested();
+        var batch = await CustomersAfterAsync(after, 200, ctx.CancellationToken);
+        if (batch.Count == 0) break;
+
+        await ExportBatchAsync(batch, ctx.CancellationToken);
+
+        after = batch[^1].Id;
+        await checkpoints.SetAsync("export", ctx.Slot, after, ctx.CancellationToken);
+    }
+
+    await checkpoints.DeleteAsync("export", ctx.Slot, ctx.CancellationToken);
+}, new() { Timeout = TimeSpan.FromMinutes(50) });
+```
+
+</TabItem>
+</Tabs>
+
 Ένας πίνακας checkpoints μπορεί να είναι τόσο απλός όσο αυτός:
 
 ```sql
@@ -102,6 +187,9 @@ CREATE TABLE job_checkpoints (
 
 Μια παρτίδα μπορεί να εξαχθεί και το instance να καταρρεύσει πριν αποθηκευτεί το checkpoint. Η επόμενη προσπάθεια τότε επαναλαμβάνει αυτή την παρτίδα. Επομένως, η ίδια η παρτίδα πρέπει να είναι ασφαλής για επανάληψη:
 
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
 ```ts
 async function exportBatch(batch: Customer[]) {
   for (const customer of batch) {
@@ -110,7 +198,26 @@ async function exportBatch(batch: Customer[]) {
 }
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+async Task ExportBatchAsync(IReadOnlyList<Customer> batch, CancellationToken cancellationToken)
+{
+    foreach (var customer in batch)
+    {
+        await warehouse.UpsertAsync("customers", customer, cancellationToken); // upsert, όχι insert
+    }
+}
+```
+
+</TabItem>
+</Tabs>
+
 ## Βήμα 4: διάκριση των προσπαθειών
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 if (ctx.attempt > 1) {
@@ -118,18 +225,33 @@ if (ctx.attempt > 1) {
 }
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+if (ctx.Attempt > 1)
+{
+    logger.LogWarning("export {ScheduledAt:O}: attempt {Attempt}, continuing after {After}", ctx.ScheduledAt, ctx.Attempt, after);
+}
+```
+
+</TabItem>
+</Tabs>
+
 ## Χρονισμός μίσθωσης για μακροχρόνιες εργασίες
 
 Η μίσθωση δεν έχει καμία σχέση με το πόση ώρα εκτελείται η εργασία. Μια εργασία μπορεί να εκτελείται για ώρες με μίσθωση 30 δευτερολέπτων, επειδή η μίσθωση ανανεώνεται κάθε λίγα δευτερόλεπτα όσο ο handler παραμένει ενεργός.
 
 Αυτό που έχει σημασία είναι το event loop να συνεχίζει να περιστρέφεται. Το heartbeat είναι ένα χρονόμετρο (timer)· ένας handler που μπλοκάρει το νήμα για διάστημα μεγαλύτερο από το `leaseMs` διακόπτει τα δικά του heartbeats και χάνει την εκτέλεση.
 
+Στο .NET το heartbeat εκτελείται στο thread pool, επομένως ένας handler που μπλοκάρει το δικό του νήμα δεν το σταματά. Αυτό που μπορεί να το σταματήσει είναι η εξάντληση του thread pool (thread-pool starvation): πολλοί handlers που μπλοκάρουν νήματα του pool με `.Result` ή `Thread.Sleep` ταυτόχρονα. Χρησιμοποιήστε `async` παντού, και `Task.Run` ή ένα αποκλειστικό νήμα (dedicated thread) για μακροχρόνιες εργασίες CPU.
+
 ```ts
 // Μπλοκάρει το νήμα: κανένα heartbeat δεν μπορεί να σταλεί όσο εκτελείται αυτό
 const result = hugeArray.map(expensiveSyncComputation);
 ```
 
-Για βαριές εργασίες CPU:
+Για βαριές εργασίες CPU στο Node.js:
 
 - σπάστε την σε κομμάτια και παραχωρήστε έλεγχο (yield) ενδιάμεσα (`await new Promise(setImmediate)`), ή
 - μεταφέρετέ την σε ένα worker thread και κάντε `await` το αποτέλεσμά της, ή
@@ -141,9 +263,9 @@ const result = hugeArray.map(expensiveSyncComputation);
 
 | Κατάσταση | Επιλογή |
 | --- | --- |
-| Η εργασία περιστασιακά υπερβαίνει το χρόνο | Διατηρήστε `overlap: 'skip'`· μια περιστασιακά παραλειπόμενη εκτέλεση είναι εντάξει |
+| Η εργασία περιστασιακά υπερβαίνει το χρόνο | Διατηρήστε `overlap: 'skip'` (`OverlapPolicy.Skip`)· μια περιστασιακά παραλειπόμενη εκτέλεση είναι εντάξει |
 | Η εργασία υπερβαίνει πάντα το χρόνο | Επιμηκύνετε το διάστημα |
-| Κάθε εκτέλεση καλύπτει το δικό της χρονικό παράθυρο και δεν πρέπει να παραλειφθεί | `overlap: 'allow'`, με κάθε εκτέλεση να λειτουργεί στο παράθυρο του `ctx.slot` |
+| Κάθε εκτέλεση καλύπτει το δικό της χρονικό παράθυρο και δεν πρέπει να παραλειφθεί | `overlap: 'allow'` (`OverlapPolicy.Allow`), με κάθε εκτέλεση να λειτουργεί στο παράθυρο του `ctx.slot` |
 
 ## Επόμενα βήματα
 

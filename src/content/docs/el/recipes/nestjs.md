@@ -1,6 +1,8 @@
 ---
 title: NestJS
 description: "Ένας scheduler ως NestJS provider, που ξεκινά και σταματά μαζί με την εφαρμογή, με εργασίες καταχωρημένες από feature services."
+sidebar:
+  badge: 'Node.js'
 ---
 
 Στο NestJS ο scheduler εντάσσεται φυσικά ως provider. Ένα module τον δημιουργεί και τον συνδέει με τον κύκλο ζωής της εφαρμογής· τα feature services τον κάνουν inject και καταχωρούν τις δικές τους εργασίες.

@@ -3,6 +3,8 @@ title: "Πολλαπλές υπηρεσίες σε ένα store"
 description: "Διαχωρισμός υπηρεσιών, περιβαλλόντων και tenants όταν μοιράζονται ένα Redis ή μια βάση δεδομένων."
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 Δύο υπηρεσίες που μοιράζονται ένα Redis ή μια βάση δεδομένων δεν πρέπει να βλέπουν η μία τις εργασίες της άλλης. Εάν και οι δύο έχουν μια εργασία με όνομα `sync` κάτω από το ίδιο namespace, ανταγωνίζονται για τις ίδιες εκτελέσεις, και κάθε εκτέλεση πραγματοποιείται μόνο σε μία από τις δύο υπηρεσίες.
 
 Η λύση είναι ένα **namespace** ανά ομάδα instances που πρέπει να μοιράζονται εργασίες.
@@ -31,9 +33,14 @@ flowchart LR
 | RabbitMQ | `prefix` | `'cron.'` |
 | NATS | `prefix`, `stream` | `'cron.'`, `'CRON'` |
 
+Στο .NET οι επιλογές είναι `Prefix`, `Table` και `Stream`, με τις ίδιες προεπιλογές.
+
 Ο κανόνας: τα instances που πρέπει να **μοιράζονται** εργασίες χρησιμοποιούν την ίδια τιμή, και οτιδήποτε άλλο χρησιμοποιεί διαφορετική.
 
 ## Ανά υπηρεσία
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 // billing
@@ -43,15 +50,55 @@ new Scheduler({ backend: new RedisBackend({ redis: process.env.REDIS_URL, prefix
 new Scheduler({ backend: new RedisBackend({ redis: process.env.REDIS_URL, prefix: 'shipping:cron:' }) });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+// billing
+builder.Services.AddAnarchon().UseRedis(options =>
+{
+    options.Configuration = builder.Configuration.GetConnectionString("redis");
+    options.Prefix = "billing:cron:";
+});
+
+// shipping
+builder.Services.AddAnarchon().UseRedis(options =>
+{
+    options.Configuration = builder.Configuration.GetConnectionString("redis");
+    options.Prefix = "shipping:cron:";
+});
+```
+
+</TabItem>
+</Tabs>
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
 ```ts
 // PostgreSQL: ένας πίνακας ανά υπηρεσία, ή ένα schema
 new PostgresBackend({ connection: pool, table: 'billing_cron_runs' });
 new PostgresBackend({ connection: pool, table: 'shipping.cron_runs' });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+// PostgreSQL: ένας πίνακας ανά υπηρεσία, ή ένα schema
+new PostgresBackend(new PostgresBackendOptions { DataSource = dataSource, Table = "billing_cron_runs" });
+new PostgresBackend(new PostgresBackendOptions { DataSource = dataSource, Table = "shipping.cron_runs" });
+```
+
+</TabItem>
+</Tabs>
+
 ## Ανά περιβάλλον
 
 Το Staging και το production δεν θα πρέπει να μοιράζονται καθόλου το ίδιο store. Όταν αναγκαστικά το κάνουν (ένα κοινόχρηστο development Redis, για παράδειγμα), συμπεριλάβετε το περιβάλλον στο namespace:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 new Scheduler({
@@ -61,6 +108,20 @@ new Scheduler({
   }),
 });
 ```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+builder.Services.AddAnarchon().UseRedis(options =>
+{
+    options.Configuration = builder.Configuration.GetConnectionString("redis");
+    options.Prefix = $"{builder.Environment.EnvironmentName.ToLowerInvariant()}:billing:cron:"; // staging:billing:cron:
+});
+```
+
+</TabItem>
+</Tabs>
 
 Χωρίς αυτό, το laptop ενός προγραμματιστή που στοχεύει στο κοινόχρηστο Redis αποσπά εκτελέσεις από το staging.
 
@@ -72,6 +133,9 @@ new Scheduler({
 
 Η απλούστερη προσέγγιση, και επαρκής για τις περισσότερες περιπτώσεις:
 
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
 ```ts
 scheduler.every('tenant-reports', '1h', async (ctx) => {
   for (const tenant of await tenants()) {
@@ -81,11 +145,30 @@ scheduler.every('tenant-reports', '1h', async (ctx) => {
 });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.Every("tenant-reports", TimeSpan.FromHours(1), async ctx =>
+{
+    foreach (var tenant in await TenantsAsync(ctx.CancellationToken))
+    {
+        await BuildReportAsync(tenant, ctx.Slot, ctx.CancellationToken);
+    }
+});
+```
+
+</TabItem>
+</Tabs>
+
 Ένα instance χειρίζεται όλους τους tenants για τη συγκεκριμένη ώρα.
 
 ### Μία εργασία ανά tenant
 
 Η εργασία κάθε tenant διεκδικείται (claimed) ξεχωριστά, έτσι η δουλειά κατανέμεται μεταξύ των instances και ένας αργός tenant δεν καθυστερεί τους υπόλοιπους:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 for (const tenant of await tenants()) {
@@ -93,7 +176,23 @@ for (const tenant of await tenants()) {
 }
 ```
 
-Κάθε instance πρέπει να καταχωρεί το ίδιο σύνολο εργασιών. Όταν προστίθενται tenants κατά το run time, κάθε instance πρέπει να ενημερώνεται σχετικά: επαναφορτώνετε τη λίστα των tenants περιοδικά και καλείτε το `every()` για τους νέους και το `remove()` για τους διαγραμμένους.
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+foreach (var tenant in await TenantsAsync())
+{
+    scheduler.Every($"report-{tenant.Id}", TimeSpan.FromHours(1), ctx => BuildReportAsync(tenant, ctx.Slot, ctx.CancellationToken));
+}
+```
+
+</TabItem>
+</Tabs>
+
+Κάθε instance πρέπει να καταχωρεί το ίδιο σύνολο εργασιών. Όταν προστίθενται tenants κατά το run time, κάθε instance πρέπει να ενημερώνεται σχετικά: επαναφορτώνετε τη λίστα των tenants περιοδικά και καλείτε το `every()` για τους νέους και το `remove()` για τους διαγραμμένους (`Every()` και `Remove()` στο .NET).
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 async function syncTenantJobs() {
@@ -111,11 +210,42 @@ async function syncTenantJobs() {
 setInterval(syncTenantJobs, 60_000);
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+async Task SyncTenantJobsAsync(CancellationToken cancellationToken)
+{
+    var wanted = (await TenantsAsync(cancellationToken)).Select(t => $"report-{t.Id}").ToHashSet();
+    var have = scheduler.GetJobs().Select(j => j.Name).Where(n => n.StartsWith("report-", StringComparison.Ordinal)).ToHashSet();
+
+    foreach (var name in wanted.Except(have))
+    {
+        scheduler.Every(name, TimeSpan.FromHours(1), ctx => BuildReportAsync(name["report-".Length..], ctx.Slot, ctx.CancellationToken));
+    }
+    foreach (var name in have.Except(wanted))
+    {
+        scheduler.Remove(name);
+    }
+}
+
+using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
+while (await timer.WaitForNextTickAsync(stoppingToken)) await SyncTenantJobsAsync(stoppingToken);
+```
+
+</TabItem>
+</Tabs>
+
+Το [παράδειγμα `Tenants`](https://github.com/aristoteliss/anarchon-dotnet/tree/main/examples/Tenants) το κάνει αυτό στο .NET.
+
 Κάθε εργασία έχει τα δικά της κλειδιά ή γραμμές (rows), οπότε χιλιάδες εργασίες tenants σημαίνουν χιλιάδες μικρές εγγραφές. Αυτό είναι μια χαρά στο Redis και την PostgreSQL. Με το RabbitMQ, το οποίο δημιουργεί μία ουρά ανά εκτέλεση, προτιμήστε τον σχεδιασμό με επανάληψη (looping).
 
 ## Πολλαπλοί schedulers σε μία διεργασία
 
 Μία διεργασία μπορεί να περιέχει περισσότερους από έναν schedulers, για παράδειγμα έναν ανά store, ή έναν ανά ομάδα εργασιών με διαφορετικούς χρόνους μίσθωσης (lease timings):
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 const fast = new Scheduler({ backend: new RedisBackend({ redis, prefix: 'app:fast:' }), leaseMs: 6_000, heartbeatMs: 1_000 });
@@ -127,11 +257,32 @@ slow.cron('rebuild-index', '0 2 * * *', rebuild, { timeoutMs: 2 * 60 * 60_000 })
 await Promise.all([fast.start(), slow.start()]);
 ```
 
-Δώστε τους διαφορετικά prefixes, και σταματήστε και τους δύο κατά τον τερματισμό.
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+// Επώνυμοι schedulers: ο καθένας είναι ένα keyed service, που εκκινείται και σταματά από τον host.
+builder.Services.AddAnarchon("fast", options => (options.Lease, options.Heartbeat) = (TimeSpan.FromSeconds(6), TimeSpan.FromSeconds(1)))
+    .UseRedis(options => (options.Connection, options.Prefix) = (redis, "app:fast:"))
+    .AddJobs<CacheJobs>();      // [Every("5s", Name = "refresh-cache")]
+builder.Services.AddAnarchon("slow", options => options.Lease = TimeSpan.FromMinutes(2))
+    .UseRedis(options => (options.Connection, options.Prefix) = (redis, "app:slow:"))
+    .AddJobs<IndexJobs>();      // [Cron("0 2 * * *", Name = "rebuild-index", Timeout = "2h")]
+
+// Αλλού: [FromKeyedServices("slow")] Scheduler slow
+```
+
+</TabItem>
+</Tabs>
+
+Δώστε τους διαφορετικά prefixes, και σταματήστε και τους δύο κατά τον τερματισμό (ένας .NET host σταματά και τους δύο).
 
 ## Ανάγνωση σε πολλαπλές υπηρεσίες
 
 Ένα dashboard μπορεί να διαβάσει το ιστορικό κάθε υπηρεσίας δημιουργώντας έναν reader ανά namespace:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 const readers = {
@@ -145,6 +296,22 @@ app.get('/:service/jobs/:name/runs', async (req, res) => {
   res.json(await reader.history(req.params.name, 20));
 });
 ```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+foreach (var service in new[] { "billing", "shipping" })
+{
+    builder.Services.AddAnarchon(service).UseRedis(options => (options.Connection, options.Prefix) = (redis, $"{service}:cron:"));
+}
+
+app.MapGet("/{service}/jobs/{name}/runs", async (string service, string name, IServiceProvider services) =>
+    services.GetKeyedService<Scheduler>(service) is { } reader ? Results.Ok(await reader.HistoryAsync(name, 20)) : Results.NotFound());
+```
+
+</TabItem>
+</Tabs>
 
 ## Επόμενα βήματα
 

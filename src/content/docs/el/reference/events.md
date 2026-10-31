@@ -3,6 +3,10 @@ title: Συμβάντα
 description: Κάθε συμβάν και κάθε πεδίο του payload του.
 ---
 
+:::note[Node.js]
+Αυτή η σελίδα περιγράφει το πακέτο Node.js. Για το .NET, δείτε [Συμβάντα (.NET)](../dotnet/events/).
+:::
+
 ```ts
 scheduler.on(event, listener);
 scheduler.once(event, listener);

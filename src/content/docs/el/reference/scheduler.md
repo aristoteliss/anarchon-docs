@@ -3,6 +3,10 @@ title: Scheduler
 description: Κάθε μέθοδος και ιδιότητα της κλάσης Scheduler.
 ---
 
+:::note[Node.js]
+Αυτή η σελίδα περιγράφει το πακέτο Node.js. Για το .NET, δείτε [Scheduler (.NET)](../dotnet/scheduler/).
+:::
+
 ```ts
 import { Scheduler } from 'anarchon';
 ```

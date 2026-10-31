@@ -1,9 +1,13 @@
 ---
-title: Decorators
+title: Decorators (Node.js)
 description: Δηλώστε εργασίες πάνω στις μεθόδους μιας κλάσης με τα @Cron, @Every και @At. Ένα αντικείμενο προσθέτει μόνο του τις εργασίες του όταν δημιουργείται, και ο scheduler μπορεί να δημιουργηθεί για εσάς από ρυθμίσεις που δίνετε μία φορά.
 ---
 
 Οι εργασίες μπορούν να δηλωθούν πάνω στις μεθόδους μιας κλάσης, αντί να περνιούνται στα `every()`, `cron()` και `at()`. Όταν δημιουργείται ένα αντικείμενο της κλάσης, προσθέτει μόνο του τις εργασίες του στον scheduler.
+
+:::note[.NET]
+Στο .NET, οι εργασίες δηλώνονται με τα attributes `[Cron]`, `[Every]` και `[At]`, και προστίθενται με το `Register()` ή, με έναν host, με το `AddJobs<T>()`: δείτε [Attributes](../attributes/).
+:::
 
 ```ts
 import { At, Cron, Every, type JobContext, RedisBackend, Scheduler } from 'anarchon';
@@ -87,9 +91,9 @@ await scheduler.start();
 
 | Decorator | Ίδιο με | Πρόγραμμα |
 | --- | --- | --- |
-| `@Every(name?, interval, options?)` | [`every()`](../defining-jobs/#εργασίες-μεσοδιαστήματος-every) | Χιλιοστά του δευτερολέπτου ή string διάρκειας όπως `'10s'` |
-| `@Cron(name?, expression, options?)` | [`cron()`](../defining-jobs/#εργασίες-cron-cron) | Μια έκφραση cron με 5 ή 6 πεδία |
-| `@At(name?, when, options?)` | [`at()`](../defining-jobs/#εφάπαξ-εργασίες-at) | Ένα `Date`, ms από το 1970, ή ISO string |
+| `@Every(name?, interval, options?)` | [`every()`](../defining-jobs/#εργασίες-μεσοδιαστήματος-every-every) | Χιλιοστά του δευτερολέπτου ή string διάρκειας όπως `'10s'` |
+| `@Cron(name?, expression, options?)` | [`cron()`](../defining-jobs/#εργασίες-cron-cron-cron) | Μια έκφραση cron με 5 ή 6 πεδία |
+| `@At(name?, when, options?)` | [`at()`](../defining-jobs/#εφάπαξ-εργασίες-at-at) | Ένα `Date`, ms από το 1970, ή ISO string |
 
 Οι επιλογές είναι οι [επιλογές εργασιών](../job-options/) της αντίστοιχης μεθόδου (`timeoutMs`, `overlap`, `maxAttempts`, `catchUpMs`, `timezone`, [`data`](../run-data/) και οι υπόλοιπες), συν δύο του ίδιου του decorator:
 

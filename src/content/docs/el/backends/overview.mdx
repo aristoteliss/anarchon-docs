@@ -3,6 +3,8 @@ title: Επισκόπηση backends
 description: Ποιο store να χρησιμοποιήσετε και τι σας προσφέρει το καθένα.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 Ένα **backend** είναι ο προσαρμογέας (adapter) μεταξύ του anarchon και του store που μοιράζονται τα instances σας. Κάθε backend διασφαλίζει ότι ένα instance κερδίζει κάθε εκτέλεση. Ορισμένα μπορούν επίσης να διατηρούν μίσθωση (lease), η οποία καθιστά εφικτά τους εφεδρικούς (backups), την προστασία επικάλυψης (overlap protection) και την ανάκτηση (catch-up).
 
 ## Επιλογή
@@ -13,7 +15,7 @@ flowchart TD
   start -- "Redis ή Valkey" --> redis["Redis backend, στρατηγική 'lease'<br/>(η προεπιλογή)"]
   start -- "PostgreSQL" --> pg["PostgresBackend"]
   start -- "Μόνο ένα μηχάνημα" --> sqlite["SqliteBackend σε αρχείο"]
-  start -- "libSQL server ή Turso" --> libsql["SqliteBackend με libSQL client"]
+  start -- "libSQL server ή Turso" --> libsql["SqliteBackend με libSQL client<br/>(μόνο Node.js)"]
   start -- "Μόνο RabbitMQ" --> rabbit["RabbitMQBackend<br/>(μόνο claim)"]
   start -- "Μόνο NATS" --> nats["NatsBackend, στρατηγική 'lease'"]
 ```
@@ -40,13 +42,16 @@ flowchart TD
 | Ονόματα εργασιών | οποιαδήποτε | οποιαδήποτε | οποιαδήποτε | οποιαδήποτε | γράμματα, ψηφία, `_`, `-` | γράμματα, ψηφία, `_`, `-` | γράμματα, ψηφία, `_`, `-` |
 | Instances σε πολλά μηχανήματα | ναι | ναι | ναι | με libSQL server | ναι | ναι | ναι |
 | Απαιτήσεις | Redis 5+ ή Valkey | Redis 5+ ή Valkey· `idmp` Redis 8.6+ | PostgreSQL 9.5+ | SQLite 3.35+ | RabbitMQ 3.9+ | JetStream | JetStream σε nats-server 2.10+, `@nats-io/kv` |
+| Πακέτο .NET | `Anarchon.Redis` | `Anarchon.Redis` | `Anarchon.Postgres` | `Anarchon.Sqlite`, μόνο αρχεία | `Anarchon.RabbitMQ` | `Anarchon.Nats` | `Anarchon.Nats` |
 
-¹ Με το `script`, το `historyTtlMs` πρέπει να είναι μεγαλύτερο από το `windowMs` της στρατηγικής.
+Ο πίνακας χρησιμοποιεί τα ονόματα του Node.js. Στο .NET είναι σε `PascalCase` χωρίς το `Ms` και δέχονται `TimeSpan`: `Overlap = OverlapPolicy.Skip`, `MaxAttempts`, `CatchUp`, `YieldAfterFailure`, `HistoryAsync()`, `LastRunAsync()`, `HistoryTtl`, `HistorySize`, `StopAsync()`. Οι στρατηγικές είναι `RedisStrategy.Lease`, `StreamId`, `Idmp`, `Script` και `NatsStrategy.MsgId`, `Lease`.
+
+¹ Με το `script`, το `historyTtlMs` πρέπει να είναι μεγαλύτερο από το `windowMs` της στρατηγικής (`ScriptWindow` στο .NET).
 ² Το NATS κρατά ένα μέγεθος ιστορικού για όλες τις εργασίες του: το μεγαλύτερο ανάμεσα στο `historySize` του backend και σε εκείνο κάθε εργασίας.
 
 ## Ποιες επιλογές δέχεται κάθε backend
 
-Οι περισσότερες επιλογές λειτουργούν παντού. Όσες χρειάζονται μίσθωση απορρίπτονται αλλού, ώστε μια ρύθμιση να μην αγνοείται ποτέ σιωπηλά: ο κώδικας με τύπους δεν μεταγλωττίζεται, και μια εργασία ή ένας scheduler από decorator ή απλή JavaScript πετά `TypeError` που ονομάζει την επιλογή και το backend.
+Οι περισσότερες επιλογές λειτουργούν παντού. Όσες χρειάζονται μίσθωση απορρίπτονται αλλού, ώστε μια ρύθμιση να μην αγνοείται ποτέ σιωπηλά: ο κώδικας με τύπους δεν μεταγλωττίζεται, και μια εργασία ή ένας scheduler από decorator ή απλή JavaScript πετά `TypeError` που ονομάζει την επιλογή και το backend. Στο .NET, η προσθήκη της εργασίας ή η δημιουργία του scheduler πετά ένα `AnarchonException` με τον κωδικό `AnarchonErrorCode.Unsupported`, και ένα παράθυρο μόνο για claim που είναι πολύ μικρό πετά ένα με `UnsafeJob`.
 
 | Επιλογή | Ορίζεται σε | Backends μίσθωσης | Backends μόνο για claim | Σημειώσεις |
 | --- | --- | --- | --- | --- |
@@ -56,6 +61,11 @@ flowchart TD
 | `historyTtlMs` | εργασία, scheduler | ναι, όχι στο NATS | μόνο Redis/Valkey | Τα RabbitMQ και NATS το απορρίπτουν |
 | `overlap`, `maxAttempts`, `catchUpMs`, `yieldAfterFailure` | εργασία | ναι | απορρίπτονται | Το `at()` δεν δέχεται ποτέ `overlap` |
 | `leaseMs`, `heartbeatMs` | scheduler | ναι | απορρίπτονται | |
+
+Τα ονόματα στο .NET είναι `Jitter`, `Timeout`, `Data`, `Offset`, `TimeZone`, `MaxLate`, `HistorySize`, `HistoryTtl`, `Overlap`, `MaxAttempts`, `CatchUp`, `YieldAfterFailure`, `Lease` και `Heartbeat`.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 const onPostgres = new Scheduler({ backend: new PostgresBackend({ connection: pool }), leaseMs: 10_000 });
@@ -69,9 +79,30 @@ const onNatsLeases = new Scheduler({ backend: new NatsBackend({ strategy: 'lease
 onNatsLeases.every('notify', '1m', notify, { maxAttempts: 2 }); // εντάξει
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+var onPostgres = new Scheduler(new SchedulerOptions { Backend = new PostgresBackend(new PostgresBackendOptions { DataSource = dataSource }), Lease = TimeSpan.FromSeconds(10) });
+onPostgres.Every("export", TimeSpan.FromHours(1), ExportAllAsync, new() { Overlap = OverlapPolicy.Skip, MaxAttempts = 2, CatchUp = TimeSpan.FromMinutes(30) }); // όλα εντάξει
+
+var onNats = new Scheduler(new SchedulerOptions { Backend = new NatsBackend("nats://localhost:4222") });
+onNats.Every("notify", TimeSpan.FromMinutes(1), NotifyAsync, new() { Timeout = TimeSpan.FromSeconds(30), MaxLate = TimeSpan.FromMinutes(1) }); // εντάξει
+onNats.Every("notify", TimeSpan.FromMinutes(1), NotifyAsync, new() { MaxAttempts = 2 }); // AnarchonException (Unsupported): το NATS MsgId δεν έχει μισθώσεις
+
+var onNatsLeases = new Scheduler(new SchedulerOptions { Backend = new NatsBackend(new NatsBackendOptions { Strategy = NatsStrategy.Lease }) });
+onNatsLeases.Every("notify", TimeSpan.FromMinutes(1), NotifyAsync, new() { MaxAttempts = 2 }); // εντάξει
+```
+
+</TabItem>
+</Tabs>
+
 ## Οι επιλογές κάθε backend
 
 Οι επιλογές των ίδιων των αντικειμένων backend. Κάθε backend δέχεται επίσης έναν client που ήδη έχει η εφαρμογή σας, και δεν τον κλείνει ποτέ.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 | Backend | Επιλογή | Προεπιλογή | Σε τι χρησιμεύει |
 | --- | --- | --- | --- |
@@ -96,6 +127,37 @@ onNatsLeases.every('notify', '1m', notify, { maxAttempts: 2 }); // εντάξε�
 | | `historySize` | `1000` | Εκτελέσεις που κρατούνται ανά εργασία, τουλάχιστον |
 | | `replicas` | `1` | Αντίγραφα του stream· `3` σε cluster NATS |
 
+</TabItem>
+<TabItem label=".NET">
+
+| Backend | Επιλογή | Προεπιλογή | Σε τι χρησιμεύει |
+| --- | --- | --- | --- |
+| `RedisBackend` | `Configuration` / `Connection` | `localhost:6379` | Configuration string του StackExchange.Redis, ή το δικό σας `IConnectionMultiplexer` |
+| | `Database` | `-1` | Ο αριθμός της βάσης δεδομένων· το `-1` είναι η προεπιλογή της σύνδεσης |
+| | `Strategy` | `RedisStrategy.Lease` | `StreamId`, `Idmp` (με `IdmpDuration`, `IdmpMaxSize`) ή `Script` (με `ScriptWindow`) |
+| | `Prefix` | `"cron:"` | Κρατά χωριστά τις υπηρεσίες που μοιράζονται ένα Redis. Το Valkey χρησιμοποιεί το ίδιο backend |
+| `PostgresBackend` | `ConnectionString` / `DataSource` | `Host=localhost;Database=postgres` | Connection string του Npgsql, ή το δικό σας `NpgsqlDataSource` |
+| | `Table` | `"anarchon_runs"` | Το όνομα των πινάκων, με schema αν θέλετε· κρατά χωριστά τις υπηρεσίες |
+| `SqliteBackend` | `ConnectionString` | `Data Source=anarchon.db` | Connection string του Microsoft.Data.Sqlite που ορίζει ένα αρχείο. Το `Default Timeout` του καθορίζει πόσο περιμένει μια διεκδίκηση την εγγραφή άλλης διεργασίας |
+| | `Table` | `"anarchon_runs"` | Όπως παραπάνω, χωρίς schema |
+| `RabbitMQBackend` | `ConnectionString` / `Connection` | `amqp://localhost` | Ένα AMQP URI, ή η δική σας `IConnection` |
+| | `Prefix` | `"cron."` | Ονόματα ουρών |
+| | `SlotTtl` | 5 λεπτά | Για πόσο θυμάται μια διεκδικημένη εκτέλεση |
+| `NatsBackend` | `ConnectionString` / `Connection` | `nats://localhost:4222` | Ένα URL ή περισσότερα χωρισμένα με κόμμα, ή η δική σας `INatsConnection` |
+| | `Strategy` | `NatsStrategy.MsgId` | `NatsStrategy.Lease` για εφεδρικούς runners, χωρίς επικάλυψη, catch-up και επαναλήψεις |
+| | `Stream`, `Prefix` | `"CRON"`, `"cron."` | Το JetStream stream και τα subjects του· με το `Lease`, και το bucket `<stream>_RUNS` |
+| | `DuplicateWindow` | 5 λεπτά | `MsgId`: για πόσο θυμάται μια διεκδικημένη εκτέλεση |
+| | `HistorySize` | `1000` | Εκτελέσεις που κρατούνται ανά εργασία, τουλάχιστον |
+| | `Replicas` | δεν ορίζεται (1 για νέο stream) | Αντίγραφα του stream· `3` σε cluster NATS |
+
+Ο constructor κάθε backend δέχεται το αντικείμενο επιλογών του, ή μόνο ένα connection string: `new RedisBackend("localhost:6379")`, `new PostgresBackend(connectionString)`.
+
+</TabItem>
+</Tabs>
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
 ```ts
 new RedisBackend({ redis: process.env.REDIS_URL, strategy: { name: 'script', windowMs: 10 * 60_000 }, prefix: 'billing:cron:' });
 new ValkeyBackend({ valkey: process.env.VALKEY_URL });
@@ -104,6 +166,22 @@ new SqliteBackend({ database: '/var/lib/app/jobs.db', busyTimeoutMs: 10_000 });
 new RabbitMQBackend({ url: process.env.AMQP_URL, prefix: 'billing.cron.', slotTtlMs: 10 * 60_000 });
 new NatsBackend({ servers: ['nats://n1:4222', 'nats://n2:4222'], replicas: 3, duplicateWindowMs: 10 * 60_000 });
 ```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+var config = builder.Configuration;
+new RedisBackend(new RedisBackendOptions { Configuration = config.GetConnectionString("redis"), Strategy = RedisStrategy.Script, ScriptWindow = TimeSpan.FromMinutes(10), Prefix = "billing:cron:" });
+new RedisBackend(new RedisBackendOptions { Configuration = config.GetConnectionString("valkey") }); // Valkey
+new PostgresBackend(new PostgresBackendOptions { DataSource = dataSource, Table = "scheduler.runs" });
+new SqliteBackend(new SqliteBackendOptions { ConnectionString = "Data Source=/var/lib/app/jobs.db;Default Timeout=10" });
+new RabbitMQBackend(new RabbitMQBackendOptions { ConnectionString = config.GetConnectionString("amqp"), Prefix = "billing.cron.", SlotTtl = TimeSpan.FromMinutes(10) });
+new NatsBackend(new NatsBackendOptions { ConnectionString = "nats://n1:4222,nats://n2:4222", Replicas = 3, DuplicateWindow = TimeSpan.FromMinutes(10) });
+```
+
+</TabItem>
+</Tabs>
 
 ## Επιλογή με βάση τι χρειάζεται μια εργασία
 
@@ -115,7 +193,7 @@ new NatsBackend({ servers: ['nats://n1:4222', 'nats://n2:4222'], replicas: 3, du
 | Φθηνή και συχνή, μια χαμένη εκτέλεση δεν πειράζει (ανανέωση cache) | jitter, μικρό `maxLateMs` | Οποιοδήποτε backend |
 | Στέλνει ό,τι εκκρεμεί (ειδοποιήσεις από ένα outbox) | τίποτα ιδιαίτερο | Οποιοδήποτε backend, και οι brokers |
 
-Ο [φάκελος examples](https://github.com/aristoteliss/anarchon/tree/main/examples) έχει ένα εκτελέσιμο αρχείο για καθένα από αυτά: `billing.ts`, `nightly-export.ts`, `cache-refresh.ts`, `broker-notifications.ts`, και `tenants.ts` για εργασίες ανά tenant.
+Ο [φάκελος examples](https://github.com/aristoteliss/anarchon/tree/main/examples) έχει ένα εκτελέσιμο αρχείο για καθένα από αυτά: `billing.ts`, `nightly-export.ts`, `cache-refresh.ts`, `broker-notifications.ts`, και `tenants.ts` για εργασίες ανά tenant. Τα [παραδείγματα .NET](https://github.com/aristoteliss/anarchon-dotnet/tree/main/examples) διαθέτουν τα ίδια ως projects: `Billing`, `NightlyExport`, `CacheRefresh`, `BrokerNotifications` και `Tenants`.
 
 ## Backends με μίσθωση και backends μόνο για claim
 
@@ -157,7 +235,10 @@ flowchart LR
 
 ## Χρήση ενός backend
 
-Κάθε backend δημιουργείται και περνιέται ως `backend`:
+Κάθε backend δημιουργείται και περνιέται ως `backend` (`Backend` στο .NET). Στο .NET κάθε backend αποτελεί ξεχωριστό πακέτο:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 import { NatsBackend, PostgresBackend, RabbitMQBackend, RedisBackend, Scheduler, SqliteBackend } from 'anarchon';
@@ -169,11 +250,37 @@ new Scheduler({ backend: new RabbitMQBackend({ url: 'amqp://localhost' }) });
 new Scheduler({ backend: new NatsBackend({ servers: 'nats://localhost:4222', strategy: 'lease' }) });
 ```
 
-Η ιδιότητα `scheduler.backend.name` σας δείχνει ποιο χρησιμοποιείται: `'redis:lease'`, `'postgres'`, `'sqlite'`, `'rabbitmq'`, `'nats'` ή `'nats:lease'`.
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+using Anarchon;
+using Anarchon.Nats;      // πακέτο Anarchon.Nats
+using Anarchon.Postgres;  // πακέτο Anarchon.Postgres
+using Anarchon.RabbitMQ;  // πακέτο Anarchon.RabbitMQ
+using Anarchon.Redis;     // πακέτο Anarchon.Redis
+using Anarchon.Sqlite;    // πακέτο Anarchon.Sqlite
+
+new Scheduler(new SchedulerOptions { Backend = new RedisBackend(new RedisBackendOptions { Configuration = "localhost:6379" }) });
+new Scheduler(new SchedulerOptions { Backend = new PostgresBackend(new PostgresBackendOptions { ConnectionString = config.GetConnectionString("app") }) });
+new Scheduler(new SchedulerOptions { Backend = new SqliteBackend(new SqliteBackendOptions { ConnectionString = "Data Source=jobs.db" }) });
+new Scheduler(new SchedulerOptions { Backend = new RabbitMQBackend(new RabbitMQBackendOptions { ConnectionString = "amqp://localhost" }) });
+new Scheduler(new SchedulerOptions { Backend = new NatsBackend(new NatsBackendOptions { ConnectionString = "nats://localhost:4222", Strategy = NatsStrategy.Lease }) });
+```
+
+</TabItem>
+</Tabs>
+
+Με έναν .NET host, το `AddAnarchon()` ακολουθούμενο από `UseRedis()`, `UsePostgres()`, `UseSqlite()`, `UseRabbitMQ()` ή `UseNats()` κάνει το ίδιο· το καθένα δέχεται ένα connection string ή ένα callback που ορίζει τις επιλογές. Δείτε [ASP.NET Core](../../recipes/aspnet-core/).
+
+Η ιδιότητα `scheduler.backend.name` (`scheduler.Backend.Name` στο .NET) σας δείχνει ποιο χρησιμοποιείται: `'redis:lease'`, `'postgres'`, `'sqlite'`, `'rabbitmq'`, `'nats'` ή `'nats:lease'`.
 
 ## Οι δικές σας συνδέσεις
 
-Κάθε backend δέχεται έναν client που διαθέτει ήδη η εφαρμογή σας. Το anarchon δεν κλείνει ποτέ client που δεν άνοιξε το ίδιο, επομένως η μέθοδος `stop()` αφήνει τον δικό σας διαθέσιμο για χρήση.
+Κάθε backend δέχεται έναν client που διαθέτει ήδη η εφαρμογή σας. Το anarchon δεν κλείνει ποτέ client που δεν άνοιξε το ίδιο, επομένως η μέθοδος `stop()` (`StopAsync()`) αφήνει τον δικό σας διαθέσιμο για χρήση.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -182,6 +289,21 @@ const scheduler = new Scheduler({ backend: new PostgresBackend({ connection: poo
 await scheduler.stop();
 await pool.query('SELECT 1'); // εξακολουθεί να λειτουργεί
 ```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+await using var dataSource = NpgsqlDataSource.Create(config.GetConnectionString("app")!);
+var scheduler = new Scheduler(new SchedulerOptions { Backend = new PostgresBackend(new PostgresBackendOptions { DataSource = dataSource }) });
+
+await scheduler.StopAsync();
+await using var command = dataSource.CreateCommand("SELECT 1");
+await command.ExecuteScalarAsync(); // εξακολουθεί να λειτουργεί
+```
+
+</TabItem>
+</Tabs>
 
 ## Κοινή χρήση ενός store μεταξύ υπηρεσιών
 
@@ -193,6 +315,8 @@ await pool.query('SELECT 1'); // εξακολουθεί να λειτουργε�
 | PostgreSQL / SQLite | `table` | `'anarchon_runs'` |
 | RabbitMQ | `prefix` | `'cron.'` |
 | NATS | `prefix` και `stream` | `'cron.'`, `'CRON'` |
+
+Στο .NET οι επιλογές είναι `Prefix`, `Table` και `Stream`, με τις ίδιες προεπιλογές. Instances σε Node.js και .NET που χρησιμοποιούν τις ίδιες τιμές μοιράζονται τις εργασίες, ώστε μία υπηρεσία να μπορεί να εκτελείται και στα δύο.
 
 Τα instances της **ίδιας** υπηρεσίας πρέπει να χρησιμοποιούν την ίδια τιμή. Δείτε [Πολλαπλές υπηρεσίες σε ένα store](../../recipes/several-services/).
 

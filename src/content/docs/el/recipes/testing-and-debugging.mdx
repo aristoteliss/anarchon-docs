@@ -3,9 +3,16 @@ title: "Δοκιμές και αποσφαλμάτωση"
 description: "Δοκιμάστε handlers και schedules χωρίς server, και εκτελέστε βήμα προς βήμα μια εκτέλεση σε debugger."
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 ## Δοκιμή ενός handler
 
 Ένας handler είναι μια συνάρτηση. Οι πιο χρήσιμες δοκιμές τον καλούν απευθείας με ένα context που κατασκευάζετε εσείς. Δεν εμπλέκεται κανένας scheduler.
+
+Στο .NET μόνο ο scheduler δημιουργεί ένα `JobContext`, επομένως αφήστε τον handler να μεταβιβάσει ό,τι χρησιμοποιεί (το slot, την προσπάθεια, το token) σε μια μέθοδο που μπορείτε να καλέσετε από μια δοκιμή.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 import { test } from 'node:test';
@@ -42,11 +49,52 @@ test('stops when the signal aborts', async () => {
 });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+// Η εργασία: ένας λεπτός handler γύρω από μια μέθοδο που παίρνει ό,τι χρειάζεται
+public sealed class InvoiceJobs(Invoices invoices)
+{
+    [Cron("0 6 1 * *", Name = "monthly-invoices")]
+    public Task BuildAsync(JobContext ctx) => invoices.BuildAsync(ctx.ScheduledAt, ctx.CancellationToken);
+}
+
+// Οι δοκιμές (xUnit)
+public sealed class InvoiceTests
+{
+    private static readonly DateTimeOffset Slot = new(2026, 10, 1, 6, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task running_twice_for_the_same_slot_creates_each_invoice_once()
+    {
+        var invoices = new Invoices(TestDatabase.Create());
+        await invoices.BuildAsync(Slot, CancellationToken.None);
+        await invoices.BuildAsync(Slot, CancellationToken.None); // προσπάθεια 2, μετά από ανάληψη (takeover)
+        Assert.Equal(3, await invoices.CountAsync());
+    }
+
+    [Fact]
+    public async Task stops_when_the_token_is_cancelled()
+    {
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new Invoices(TestDatabase.Create()).BuildAsync(Slot, cancelled.Token));
+    }
+}
+```
+
+</TabItem>
+</Tabs>
+
 Αυτές οι δύο δοκιμές καλύπτουν τα δύο πράγματα που οφείλει ένας handler στον scheduler: να είναι ασφαλής στην εκτέλεση δύο φορές (idempotent), και να σταματά όταν του ζητηθεί.
 
 ## Δοκιμές με πραγματικό scheduler
 
 Για να δοκιμάσετε τη συνδεσμολογία (wiring), χρησιμοποιήστε το `SqliteBackend` σε ένα προσωρινό αρχείο. Δεν απαιτεί server και συμπεριφέρεται όπως τα production lease backends.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 import { mkdtempSync } from 'node:fs';
@@ -64,9 +112,31 @@ function testScheduler(instanceId = 'test') {
 }
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+using Anarchon;
+using Anarchon.Sqlite;
+
+static string TestFile() => Path.Combine(Directory.CreateTempSubdirectory("cron-test-").FullName, "jobs.db");
+
+static Scheduler TestScheduler(string instanceId = "test", string? file = null) => new(new SchedulerOptions
+{
+    Backend = new SqliteBackend($"Data Source={file ?? TestFile()}"),
+    InstanceId = instanceId,
+});
+```
+
+</TabItem>
+</Tabs>
+
 ### Εκτέλεση μιας εργασίας χωρίς αναμονή για το πρόγραμμά της
 
-Η μέθοδος `runNow()` εκτελεί την εργασία αμέσως και επιστρέφει την εγγραφή της:
+Η μέθοδος `runNow()` (`RunNowAsync()`) εκτελεί την εργασία αμέσως και επιστρέφει την εγγραφή της:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 test('the sync job succeeds', async () => {
@@ -82,11 +152,34 @@ test('the sync job succeeds', async () => {
 });
 ```
 
-Το `catchUpMs: 0` αποτρέπει τον scheduler από το να εκτελέσει επίσης το πιο πρόσφατο slot κατά την εκκίνηση, κάτι που διαφορετικά θα πρόσθετε μια εκτέλεση που δεν ζητήσατε.
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+[Fact]
+public async Task the_sync_job_succeeds()
+{
+    await using var scheduler = TestScheduler(); // σταματά στο τέλος της δοκιμής
+    scheduler.Every("sync", TimeSpan.FromHours(1), SyncCustomersAsync, new() { CatchUp = TimeSpan.Zero });
+    await scheduler.StartAsync();
+
+    var run = await scheduler.RunNowAsync("sync");
+
+    Assert.Equal(RunStatus.Success, run.Status);
+}
+```
+
+</TabItem>
+</Tabs>
+
+Το `catchUpMs: 0` (`CatchUp = TimeSpan.Zero`) αποτρέπει τον scheduler από το να εκτελέσει επίσης το πιο πρόσφατο slot κατά την εκκίνηση, κάτι που διαφορετικά θα πρόσθετε μια εκτέλεση που δεν ζητήσατε.
 
 ### Δύο instances
 
 Για να διαπιστώσετε ότι μια εκτέλεση πραγματοποιείται μία φορά, μοιράστε το αρχείο ανάμεσα σε δύο schedulers:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 test('two instances, one run per slot', async () => {
@@ -106,9 +199,42 @@ test('two instances, one run per slot', async () => {
 });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+[Fact]
+public async Task two_instances_one_run_per_slot()
+{
+    var file = TestFile();
+    var ran = new ConcurrentQueue<long>();
+    var instances = new[] { "A", "B" }.Select(id => TestScheduler(id, file)).ToList();
+    foreach (var scheduler in instances)
+    {
+        scheduler.Every("tick", TimeSpan.FromSeconds(1), ctx =>
+        {
+            ran.Enqueue(ctx.Slot);
+            return Task.CompletedTask;
+        }, new() { CatchUp = TimeSpan.Zero });
+    }
+
+    await Task.WhenAll(instances.Select(s => s.StartAsync()));
+    await Task.Delay(3_500);
+    await Task.WhenAll(instances.Select(s => s.StopAsync()));
+
+    Assert.Equal(ran.Count, ran.Distinct().Count()); // κανένα slot δεν εκτελέστηκε δύο φορές
+}
+```
+
+</TabItem>
+</Tabs>
+
 ### Η επικύρωση ελέγχεται κατά την καταχώριση
 
 Οι μη έγκυρες επιλογές πετούν σφάλμα (throw) κατά την προσθήκη της εργασίας, επομένως είναι εύκολο να ελεγχθούν χωρίς να ξεκινήσετε τίποτα:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 test('refuses a jitter longer than half the interval', () => {
@@ -117,22 +243,52 @@ test('refuses a jitter longer than half the interval', () => {
 });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+[Fact]
+public async Task refuses_a_jitter_longer_than_half_the_interval()
+{
+    await using var scheduler = TestScheduler();
+    Assert.Throws<ArgumentOutOfRangeException>(() =>
+        scheduler.Every("bad", TimeSpan.FromSeconds(2), _ => Task.CompletedTask, new() { Jitter = TimeSpan.FromMilliseconds(1_500) }));
+}
+```
+
+</TabItem>
+</Tabs>
+
 ## Μην κάνετε mock το ρολόι γύρω από ένα πραγματικό backend
 
-Τα εικονικά χρονόμετρα (fake timers) μετακινούν το ρολόι της διεργασίας σας, αλλά το store διατηρεί το δικό του. Σε ένα lease backend, η λήξη της μίσθωσης καθορίζεται από την ώρα του store, επομένως η μετακίνηση ενός εικονικού ρολογιού κατά μία ώρα δεν λήγει τη μίσθωση, και η δοκιμή καταλήγει να ελέγχει κάτι που δεν μπορεί να συμβεί στην πραγματικότητα. Δοκιμάστε τους handlers με ένα εικονικό context, και δοκιμάστε τη συνδεσμολογία με το `runNow()` και μικρά πραγματικά διαστήματα (intervals).
+Τα εικονικά χρονόμετρα (fake timers) μετακινούν το ρολόι της διεργασίας σας, αλλά το store διατηρεί το δικό του. Σε ένα lease backend, η λήξη της μίσθωσης καθορίζεται από την ώρα του store, επομένως η μετακίνηση ενός εικονικού ρολογιού κατά μία ώρα δεν λήγει τη μίσθωση, και η δοκιμή καταλήγει να ελέγχει κάτι που δεν μπορεί να συμβεί στην πραγματικότητα. Δοκιμάστε τους handlers με ένα εικονικό context, και δοκιμάστε τη συνδεσμολογία με το `runNow()` και μικρά πραγματικά διαστήματα (intervals). Στο .NET αυτό ισχύει και για το `SchedulerOptions.TimeProvider`: ένας `FakeTimeProvider` μετακινεί τα χρονόμετρα του scheduler, όχι το ρολόι του store.
 
 ## Αποσφαλμάτωση μιας εκτέλεσης
 
 Το αποθετήριο περιλαμβάνει παραδείγματα φτιαγμένα για debugger. Από ένα αντίγραφο του αποθετηρίου (checkout):
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```sh
 pnpm install
 npx tsx examples/walkthrough.ts
 ```
 
-Το `examples/walkthrough.ts` εκτελεί δύο instances σε μία διεργασία χρησιμοποιώντας ένα αρχείο SQLite, με μίσθωση 10 λεπτών και όριο καθυστέρησης (lateness limit), ώστε η παραμονή σε ένα breakpoint να μην αλλάζει το αποτέλεσμα. Η κεφαλίδα του απαριθμεί τις συναρτήσεις από τις οποίες διέρχεται μια εκτέλεση, με τη σειρά.
+</TabItem>
+<TabItem label=".NET">
 
-Στο VS Code, ανοίξτε το **Run and Debug**, επιλέξτε **Example: walkthrough (βηματική εκτέλεση μιας διαδρομής (step through one run))** και πατήστε F5. Κάνει παύση ακριβώς πριν από το `start()`. Προχωρήστε βήμα-βήμα (step in) με F11, ή ορίστε breakpoints στα παρακάτω:
+```sh
+git clone https://github.com/aristoteliss/anarchon-dotnet && cd anarchon-dotnet
+dotnet run --project examples/Walkthrough
+```
+
+</TabItem>
+</Tabs>
+
+Το `examples/walkthrough.ts` (`examples/Walkthrough` στο .NET) εκτελεί δύο instances σε μία διεργασία χρησιμοποιώντας ένα αρχείο SQLite, με μίσθωση 10 λεπτών και όριο καθυστέρησης (lateness limit), ώστε η παραμονή σε ένα breakpoint να μην αλλάζει το αποτέλεσμα. Η κεφαλίδα του απαριθμεί τις συναρτήσεις από τις οποίες διέρχεται μια εκτέλεση, με τη σειρά.
+
+Στο VS Code, ανοίξτε το **Run and Debug**, επιλέξτε **Example: walkthrough (βηματική εκτέλεση μιας διαδρομής (step through one run))** και πατήστε F5. Κάνει παύση ακριβώς πριν από το `start()`. Προχωρήστε βήμα-βήμα (step in) με F11, ή ορίστε breakpoints στις παρακάτω συναρτήσεις. Το αποθετήριο .NET διαθέτει την ίδια επιλογή εκκίνησης (**Example: Walkthrough**), η οποία σταματά στο `Debugger.Break()`· η κεφαλίδα του απαριθμεί τις μεθόδους C#, όπως `JobTimers.Arm()`, `LeaseRunner.RunAsync()` και `Executor.ExecuteAsync()`.
 
 | Αρχείο κάτω από το `src/scheduler/` | Συνάρτηση | Τι συμβαίνει εκεί |
 | --- | --- | --- |
@@ -144,10 +300,10 @@ npx tsx examples/walkthrough.ts
 | `lease-runner.ts` | `watch()` | Ένα εφεδρικό instance προγραμματίζει τον επόμενο έλεγχό του |
 
 :::caution
-Ένας debugger σε παύση σταματά το ρολόι της διεργασίας σας αλλά όχι του store. Με κανονικούς χρόνους μίσθωσης, η παύση σε ένα breakpoint για διάστημα μεγαλύτερο από το `leaseMs` αναγκάζει ένα εφεδρικό (backup) instance να αναλάβει την εκτέλεση (takeover). Αυτό είναι η βιβλιοθήκη που λειτουργεί σωστά· αυξήστε το `leaseMs` όσο κάνετε debug.
+Ένας debugger σε παύση σταματά το ρολόι της διεργασίας σας αλλά όχι του store. Με κανονικούς χρόνους μίσθωσης, η παύση σε ένα breakpoint για διάστημα μεγαλύτερο από το `leaseMs` (`Lease`) αναγκάζει ένα εφεδρικό (backup) instance να αναλάβει την εκτέλεση (takeover). Αυτό είναι η βιβλιοθήκη που λειτουργεί σωστά· αυξήστε το όσο κάνετε debug.
 :::
 
-Άλλα παραδείγματα στο αποθετήριο:
+Άλλα παραδείγματα στο αποθετήριο. Το [αποθετήριο .NET](https://github.com/aristoteliss/anarchon-dotnet/tree/main/examples) περιλαμβάνει τα περισσότερα από αυτά ως projects: `Failover`, `OptionsAndEvents`, `HttpApi`, `OwnClients`, `Basic`, `Attributes`, `Hosting`, `RunData`, `QuickStart`, καθώς και τις παρακάτω ρυθμίσεις από την πραγματική ζωή.
 
 | Παράδειγμα | Τι δείχνει |
 | --- | --- |
@@ -174,15 +330,35 @@ npx tsx examples/walkthrough.ts
 | [`examples/tenants.ts`](https://github.com/aristoteliss/anarchon/blob/main/examples/tenants.ts) | Οι ίδιες εργασίες ανά tenant, ο καθένας στη ζώνη ώρας του | μία εργασία ανά tenant, `timezone` και `data` ανά εργασία, συνάρτηση δεδομένων, `remove()`, `runNow()` με δεδομένα |
 | [`examples/broker-notifications.ts`](https://github.com/aristoteliss/anarchon/blob/main/examples/broker-notifications.ts) | Μόνο RabbitMQ, ή NATS με `msg-id`: χωρίς μισθώσεις | κάθε εκτέλεση στέλνει ό,τι εκκρεμεί, `maxLateMs` κάτω από τη μνήμη του broker, χωρίς επιλογές μίσθωσης |
 
+Στο .NET αυτά είναι τα `Billing`, `CacheRefresh`, `NightlyExport`, `Tenants` και `BrokerNotifications`.
+
 ## Παρακολούθηση της λειτουργίας ενός instance
 
 Ενεργοποιήστε το ενσωματωμένο log όσο ερευνάτε:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 new Scheduler({ backend, log: true });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+// Ο scheduler καταγράφει στην κατηγορία "Anarchon.Scheduler" του LoggerFactory του· ένας host περνάει το δικό του.
+using var loggers = LoggerFactory.Create(logging => logging.AddConsole().SetMinimumLevel(LogLevel.Debug));
+new Scheduler(new SchedulerOptions { Backend = backend, LoggerFactory = loggers });
+```
+
+</TabItem>
+</Tabs>
+
 Ή καταγράψτε κάθε συμβάν με τα δεδομένα του (payload):
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 for (const event of ['start', 'success', 'failure', 'interrupted', 'skip', 'lost', 'error'] as const) {
@@ -190,7 +366,26 @@ for (const event of ['start', 'success', 'failure', 'interrupted', 'skip', 'lost
 }
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.Started += (_, e) => Console.WriteLine($"started {e}");
+scheduler.Succeeded += (_, e) => Console.WriteLine($"succeeded {e}");
+scheduler.Failed += (_, e) => Console.WriteLine($"failed {e}");
+scheduler.Interrupted += (_, e) => Console.WriteLine($"interrupted {e}");
+scheduler.Skipped += (_, e) => Console.WriteLine($"skipped {e}");
+scheduler.Lost += (_, e) => Console.WriteLine($"lost {e}");
+scheduler.Error += (_, e) => Console.WriteLine($"error {e}");
+```
+
+</TabItem>
+</Tabs>
+
 Στη συνέχεια συγκρίνετε με την προβολή σε επίπεδο cluster:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 console.table(
@@ -205,11 +400,24 @@ console.table(
 );
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+foreach (var r in await scheduler.HistoryAsync("sync", 10))
+{
+    Console.WriteLine($"{r.ScheduledAt:O} {r.InstanceId,-12} {r.Attempt} {r.Reason,-9} {r.Status,-11} {r.Duration?.TotalMilliseconds:0} ms");
+}
+```
+
+</TabItem>
+</Tabs>
+
 ## Συνηθισμένες εκπλήξεις
 
 | Τι βλέπετε | Γιατί |
 | --- | --- |
-| Μια εκτέλεση ξεκινά αμέσως μετά το `start()` με αιτία `catch-up` | Το πιο πρόσφατο slot έπρεπε να είχε εκτελεστεί πρόσφατα και κανείς δεν το εκτέλεσε. Ορίστε `catchUpMs: 0` για να το απενεργοποιήσετε |
+| Μια εκτέλεση ξεκινά αμέσως μετά το `start()` με αιτία `catch-up` | Το πιο πρόσφατο slot έπρεπε να είχε εκτελεστεί πρόσφατα και κανείς δεν το εκτέλεσε. Ορίστε `catchUpMs: 0` (`CatchUp = TimeSpan.Zero`) για να το απενεργοποιήσετε |
 | Κάθε instance εκτός από ένα καταγράφει `skipped (taken)` | Αυτό είναι φυσιολογικό: ένας νικητής ανά εκτέλεση |
 | `skipped (overlap)` | Η προηγούμενη εκτέλεση αυτής της εργασίας συνεχίζεται ακόμη |
 | Μια εκτέλεση εμφανίζεται δύο φορές στο ιστορικό | Μία εγγραφή ανά προσπάθεια: έγινε ανάληψη (taken over) |

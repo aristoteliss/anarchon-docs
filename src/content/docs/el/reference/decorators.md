@@ -3,6 +3,10 @@ title: Decorators
 description: "Τα @Every, @Cron, @At και @Scheduled, μαζί με τα Scheduler.configure(), get(), register() και τα υπόλοιπα: υπογραφές, παραδείγματα και τι να προσέξετε."
 ---
 
+:::note[Node.js]
+Αυτή η σελίδα περιγράφει το πακέτο Node.js. Για το .NET, δείτε [Attributes (.NET)](../dotnet/attributes/).
+:::
+
 ```ts
 import { At, Cron, Every, Scheduled, Scheduler } from 'anarchon';
 ```

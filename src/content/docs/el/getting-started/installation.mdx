@@ -1,11 +1,14 @@
 ---
 title: Εγκατάσταση
-description: Εγκαταστήστε το anarchon και τον driver για το store που χρησιμοποιείτε.
+description: Εγκαταστήστε το anarchon για Node.js ή .NET, μαζί με τον driver για το store που χρησιμοποιείτε.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Το anarchon απαιτεί **Node.js 20 ή νεότερο**.
+Το anarchon διατίθεται ως το πακέτο `anarchon` στο npm (Node.js 20 ή νεότερο) και ως τα πακέτα `Anarchon` στο NuGet (.NET 10). Επιλέξτε τη γλώσσα σας· η καρτέλα που επιλέγετε διατηρείται σε κάθε σελίδα.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 Εγκαταστήστε το anarchon και τον driver για το store σας. Οι drivers είναι προαιρετικά peer dependencies, επομένως εγκαθιστάτε μόνο αυτόν που χρησιμοποιείτε.
 
@@ -50,6 +53,51 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 Οι εντολές `npm install` και `yarn add` λειτουργούν με τον ίδιο τρόπο.
 
+</TabItem>
+<TabItem label=".NET">
+
+Κάθε store αποτελεί ξεχωριστό πακέτο, το οποίο φέρνει μαζί του το `Anarchon` (τον πυρήνα) και τον driver του store.
+
+<Tabs syncKey="backend">
+  <TabItem label="Redis / Valkey">
+    ```sh
+    dotnet add package Anarchon.Redis
+    ```
+    Redis 5 ή νεότερο, ή Valkey, μέσω του StackExchange.Redis. Μπορείτε να περάσετε ένα `IConnectionMultiplexer` που διαθέτει ήδη η εφαρμογή σας.
+  </TabItem>
+  <TabItem label="PostgreSQL">
+    ```sh
+    dotnet add package Anarchon.Postgres
+    ```
+    PostgreSQL 9.5 ή νεότερο, μέσω του Npgsql. Μπορείτε να περάσετε το `NpgsqlDataSource` της εφαρμογής σας αντί για ένα connection string.
+  </TabItem>
+  <TabItem label="SQLite">
+    ```sh
+    dotnet add package Anarchon.Sqlite
+    ```
+    Το Microsoft.Data.Sqlite φέρνει μαζί του την SQLite (απαιτείται η 3.24 ή νεότερη). Τα libSQL και Turso είναι διαθέσιμα μόνο για Node.js.
+  </TabItem>
+  <TabItem label="RabbitMQ">
+    ```sh
+    dotnet add package Anarchon.RabbitMQ
+    ```
+    RabbitMQ 3.9 ή νεότερο, μέσω του RabbitMQ.Client 7.
+  </TabItem>
+  <TabItem label="NATS">
+    ```sh
+    dotnet add package Anarchon.Nats
+    ```
+    Το JetStream πρέπει να είναι ενεργοποιημένο στον server· το `NatsStrategy.Lease` απαιτεί nats-server 2.10 ή νεότερο.
+  </TabItem>
+</Tabs>
+
+Με έναν host (ASP.NET Core, worker service), οι μέθοδοι `AddAnarchon()` και `UseRedis()`, `UsePostgres()`,
+`UseSqlite()`, `UseRabbitMQ()` ή `UseNats()` περιλαμβάνονται σε αυτά τα πακέτα: δείτε το
+[ASP.NET Core](../../recipes/aspnet-core/).
+
+</TabItem>
+</Tabs>
+
 ## Ποιο store να επιλέξω;
 
 Χρησιμοποιήστε αυτό που διαθέτει ήδη η υπηρεσία σας. Αν έχετε επιλογή:
@@ -59,14 +107,14 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 | Redis ή Valkey | Την προεπιλογή, στρατηγική `lease` | Το πλήρες σύνολο δυνατοτήτων και η χαμηλότερη καθυστέρηση (latency) |
 | PostgreSQL, χωρίς Redis | `PostgresBackend` | Το πλήρες σύνολο δυνατοτήτων, χωρίς νέα υποδομή |
 | Ένα μηχάνημα, πολλαπλές διεργασίες | `SqliteBackend` σε αρχείο | Κανένας server απολύτως |
-| Μόνο NATS | `NatsBackend` με `strategy: 'lease'` | Το πλήρες σύνολο δυνατοτήτων, σε ένα key-value bucket του JetStream |
+| Μόνο NATS | `NatsBackend` με τη στρατηγική μίσθωσης (`strategy: 'lease'`, `NatsStrategy.Lease`) | Το πλήρες σύνολο δυνατοτήτων, σε ένα key-value bucket του JetStream |
 | Μόνο RabbitMQ | `RabbitMQBackend` | Ένας νικητής ανά εκτέλεση, αλλά χωρίς backups, προστασία επικάλυψης ή ανάκτηση (catch-up) |
 
 Η [Επισκόπηση backends](../../backends/overview/) τα συγκρίνει αναλυτικά.
 
-## Ρύθμιση TypeScript
+## TypeScript
 
-Το anarchon είναι γραμμένο σε TypeScript και παρέχει τους δικούς του τύπους. Δεν χρειάζεται να εγκαταστήσετε τίποτα επιπλέον.
+Μόνο για Node.js: το anarchon είναι γραμμένο σε TypeScript και παρέχει τους δικούς του τύπους. Δεν χρειάζεται να εγκαταστήσετε τίποτα επιπλέον.
 
 ```ts
 import { Scheduler, type JobContext, type RunRecord } from 'anarchon';
@@ -80,7 +128,12 @@ const { Scheduler } = require('anarchon');
 
 ## Έλεγχος ότι λειτουργεί
 
-Αποθηκεύστε αυτό ως `check.mjs` και εκτελέστε `node check.mjs`. Χρησιμοποιεί ένα αρχείο SQLite, επομένως δεν χρειάζεται server (Node 22.13 ή νεότερο).
+Χρησιμοποιεί ένα αρχείο SQLite, επομένως δεν χρειάζεται server.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
+Αποθηκεύστε αυτό ως `check.mjs` και εκτελέστε `node check.mjs` (Node 22.13 ή νεότερο).
 
 ```js
 import { Scheduler, SqliteBackend } from 'anarchon';
@@ -91,6 +144,30 @@ scheduler.every('hello', '2s', (ctx) => console.log('hello at', ctx.scheduledAt.
 await scheduler.start();
 setTimeout(() => scheduler.stop(), 7_000);
 ```
+
+</TabItem>
+<TabItem label=".NET">
+
+Σε ένα console project με το `Anarchon.Sqlite`, βάλτε αυτό στο `Program.cs` και εκτελέστε `dotnet run`.
+
+```csharp
+using Anarchon;
+using Anarchon.Sqlite;
+
+await using var scheduler = new Scheduler(new SchedulerOptions { Backend = new SqliteBackend("Data Source=anarchon.db") });
+scheduler.Every("hello", TimeSpan.FromSeconds(2), ctx =>
+{
+    Console.WriteLine($"hello at {ctx.ScheduledAt:O}");
+    return Task.CompletedTask;
+});
+
+await scheduler.StartAsync();
+await Task.Delay(TimeSpan.FromSeconds(7));
+await scheduler.StopAsync();
+```
+
+</TabItem>
+</Tabs>
 
 Θα πρέπει να δείτε μία γραμμή κάθε δύο δευτερόλεπτα, και στη συνέχεια η διεργασία τερματίζεται.
 

@@ -3,7 +3,12 @@ title: SQLite και libSQL
 description: Το πλήρες σύνολο δυνατοτήτων χωρίς server για ένα μηχάνημα, ή με libSQL server για περισσότερα.
 ---
 
-Το `SqliteBackend` σας προσφέρει το πλήρες σύνολο δυνατοτήτων (εφεδρικούς, προστασία από αλληλεπικαλυπτόμενες εκτελέσεις, ανάκτηση, παράδοση) χωρίς να χρειάζεται να εκτελείται κάποιος server. Απαιτεί SQLite 3.35 ή νεότερο.
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Το `SqliteBackend` σας προσφέρει το πλήρες σύνολο δυνατοτήτων (εφεδρικούς, προστασία από αλληλεπικαλυπτόμενες εκτελέσεις, ανάκτηση, παράδοση) χωρίς να χρειάζεται να εκτελείται κάποιος server. Απαιτεί SQLite 3.35 ή νεότερο. Στο .NET είναι το πακέτο `Anarchon.Sqlite`, βασισμένο στο Microsoft.Data.Sqlite, το οποίο περιλαμβάνει το δικό του SQLite· απαιτεί 3.24 ή νεότερο και λειτουργεί μόνο με αρχεία, όχι με libSQL.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 import { Scheduler, SqliteBackend } from 'anarchon';
@@ -13,19 +18,38 @@ const scheduler = new Scheduler({
 });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+using Anarchon;
+using Anarchon.Sqlite;
+
+var scheduler = new Scheduler(new SchedulerOptions
+{
+    Backend = new SqliteBackend("Data Source=/var/lib/myapp/jobs.db"),
+});
+```
+
+</TabItem>
+</Tabs>
+
 ## Πότε είναι κατάλληλο
 
 Ένα αρχείο SQLite συντονίζει τις διεργασίες που ανοίγουν **το ίδιο ακριβώς αρχείο**.
 
 | Διάταξη | Λειτουργεί; |
 | --- | --- |
-| Πολλαπλές διεργασίες σε ένα μηχάνημα (PM2, Node cluster, πολλαπλά containers που μοιράζονται ένα volume) | Ναι |
+| Πολλαπλές διεργασίες σε ένα μηχάνημα (PM2, Node cluster, υπηρεσίες systemd, πολλαπλά containers που μοιράζονται ένα volume) | Ναι |
 | Ανάπτυξη και δοκιμές (tests) | Ναι, χωρίς να χρειάζεται εγκατάσταση τίποτα |
 | Πολλαπλά μηχανήματα, καθένα με τον δικό του δίσκο | **Όχι**: κάθε μηχάνημα θα έχει το δικό του αρχείο και θα εκτελεί κάθε εργασία |
 | Πολλαπλά μηχανήματα σε δικτυακό σύστημα αρχείων (NFS) | **Όχι**: τα file locks του SQLite δεν είναι αξιόπιστα εκεί |
-| Πολλαπλά μηχανήματα με libSQL server ή Turso | Ναι, δείτε [παρακάτω](#πολλαπλά-μηχανήματα-ένας-libsql-server) |
+| Πολλαπλά μηχανήματα με libSQL server ή Turso | Μόνο Node.js, δείτε [παρακάτω](#πολλαπλά-μηχανήματα-ένας-libsql-server) |
 
-## Οδηγοί βάσης δεδομένων (Drivers)
+## Οδηγοί βάσης δεδομένων (Drivers) και επιλογές
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 Η παράμετρος `database` δέχεται μια διαδρομή αρχείου (file path) ή ένα αντικείμενο database που ήδη διαθέτετε.
 
@@ -50,7 +74,7 @@ import { DatabaseSync } from 'node:sqlite';
 new SqliteBackend({ database: new DatabaseSync('./jobs.db') });
 ```
 
-## Επιλογές
+**Επιλογές**
 
 | Επιλογή | Προεπιλογή | Σημασία |
 | --- | --- | --- |
@@ -68,9 +92,34 @@ new SqliteBackend({ database: db });
 
 Το `busy_timeout` ορίζεται από το `busyTimeoutMs` και στις δύο περιπτώσεις.
 
+</TabItem>
+<TabItem label=".NET">
+
+Το `ConnectionString` δέχεται ένα connection string του Microsoft.Data.Sqlite που ορίζει ένα αρχείο. Μια βάση δεδομένων στη μνήμη (in-memory) ή προσωρινή απορρίπτεται με `ArgumentException`, καθώς μόνο μία σύνδεση θα μπορούσε να τη βλέπει.
+
+```csharp
+// Η προεπιλογή είναι "Data Source=anarchon.db", στον τρέχοντα κατάλογο εργασίας
+new SqliteBackend("Data Source=jobs.db");
+
+// Αναμονή έως 10 δευτερόλεπτα για την εγγραφή μιας άλλης διεργασίας, και χρήση άλλου πίνακα
+new SqliteBackend(new SqliteBackendOptions { ConnectionString = "Data Source=/var/lib/myapp/jobs.db;Default Timeout=10", Table = "cron_runs" });
+```
+
+**Επιλογές**
+
+| Επιλογή | Προεπιλογή | Σημασία |
+| --- | --- | --- |
+| `ConnectionString` | `"Data Source=anarchon.db"` | Connection string που ορίζει ένα αρχείο. Το `Default Timeout` του (30 δευτερόλεπτα αν δεν οριστεί) καθορίζει πόσο περιμένει μια εγγραφή την εγγραφή μιας άλλης διεργασίας πριν αποτύχει |
+| `Table` | `"anarchon_runs"` | Όνομα πίνακα, χωρίς schema |
+
+Το backend μεταβαίνει το αρχείο σε λειτουργία WAL κατά την εκκίνηση, ώστε οι αναγνώστες να μην μπλοκάρουν τον writer, και ορίζει το `busy_timeout` σε κάθε σύνδεση βάσει του `Default Timeout`. Κατά το `StopAsync()` καθαρίζει το connection pool εκείνου του αρχείου, ώστε το SQLite να ενσωματώσει το write-ahead log πίσω στο αρχείο.
+
+</TabItem>
+</Tabs>
+
 ## Πίνακες
 
-Δημιουργούνται κατά το `start()`:
+Δημιουργούνται κατά το `start()` (`StartAsync()`):
 
 | Πίνακας | Μία γραμμή ανά | Περιεχόμενο |
 | --- | --- | --- |
@@ -89,7 +138,7 @@ sequenceDiagram
   participant F as jobs.db
   A->>F: BEGIN IMMEDIATE (λαμβάνει το write lock)
   B->>F: BEGIN IMMEDIATE
-  Note over B,F: Το B περιμένει, έως busyTimeoutMs
+  Note over B,F: Το B περιμένει, έως busyTimeoutMs (Default Timeout)
   A->>F: SELECT της εκτέλεσης: καμία γραμμή
   A->>F: INSERT της εκτέλεσης: attempt 1, token a1, λήξη μίσθωσης
   A->>F: COMMIT
@@ -105,6 +154,8 @@ sequenceDiagram
 Ένας εφεδρικός που ελέγχει μια ενεργή εκτέλεση εκτελεί μόνο ανάγνωση· αποκτά το write lock μόνο όταν η μίσθωση έχει λήξει. Τα heartbeats και η ολοκλήρωση («finished») είναι μεμονωμένες εντολές.
 
 ## Πολλαπλά μηχανήματα: ένας libSQL server
+
+Αυτή η ενότητα αφορά το Node.js. Το backend του .NET λειτουργεί μόνο με αρχεία SQLite· σε πολλαπλά μηχανήματα, χρησιμοποιήστε PostgreSQL ή Redis.
 
 Το [libSQL](https://github.com/tursodatabase/libsql) είναι ένα fork του SQLite που μπορεί να εκτελεστεί ως server (`sqld`), και το [Turso](https://turso.tech) το παρέχει ως υπηρεσία. Περάστε έναν απομακρυσμένο client και κάθε μηχάνημα μοιράζεται μία κοινή βάση δεδομένων:
 
@@ -131,7 +182,7 @@ const scheduler = new Scheduler({ backend: new SqliteBackend({ database: client 
 
 ## Μία διεργασία, πολλαπλοί schedulers
 
-Οι drivers του SQLite μπλοκάρουν το thread ενώ περιμένουν για κάποιο lock. Για τον λόγο αυτό, το anarchon εκτελεί κάθε εντολή SQLite σε μια διεργασία μέσω μίας ενιαίας ουράς, ώστε δύο schedulers στην ίδια διεργασία (για παράδειγμα σε δοκιμές/tests) να μην μπορούν να οδηγηθούν σε αδιέξοδο (deadlock) μεταξύ τους. Δεν χρειάζεται να κάνετε τίποτα για αυτό.
+Οι drivers του SQLite μπλοκάρουν το thread ενώ περιμένουν για κάποιο lock. Για τον λόγο αυτό, το anarchon εκτελεί κάθε εντολή SQLite σε μια διεργασία μέσω μίας ενιαίας ουράς, ώστε δύο schedulers στην ίδια διεργασία (για παράδειγμα σε δοκιμές/tests) να μην μπορούν να οδηγηθούν σε αδιέξοδο (deadlock) μεταξύ τους. Δεν χρειάζεται να κάνετε τίποτα για αυτό. Στο .NET, κάθε εντολή εκτελείται σε μια δική της σύνδεση από το pool και περιμένει το lock χωρίς να μπλοκάρει άλλους schedulers.
 
 ## Αντίγραφα ασφαλείας και το αρχείο
 

@@ -3,6 +3,8 @@ title: "Rolling deploys στο Kubernetes"
 description: "Ομαλός τερματισμός των pods ώστε μια τρέχουσα εργασία να παραδίδεται σε άλλο pod, και ονοματοδοσία των instances σύμφωνα με τα pods."
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 Ένα rolling deploy τερματίζει τα pods ένα-ένα καθώς ξεκινούν τα νέα. Για έναν scheduler αυτή είναι η πιο συνηθισμένη «αποτυχία», και θα πρέπει να είναι ένα μη-γεγονός: το pod που τερματίζεται παραδίδει την τρέχουσα εργασία του σε ένα άλλο pod.
 
 ## Τι θα έπρεπε να συμβεί
@@ -26,9 +28,12 @@ sequenceDiagram
 
 Τρία πράγματα το κάνουν να λειτουργεί.
 
-## 1. Κλήση της `stop()` στο SIGTERM
+## 1. Διακοπή του scheduler στο SIGTERM
 
-Το Kubernetes στέλνει `SIGTERM`, περιμένει για `terminationGracePeriodSeconds`, και στη συνέχεια στέλνει `SIGKILL`.
+Το Kubernetes στέλνει `SIGTERM`, περιμένει για `terminationGracePeriodSeconds`, και στη συνέχεια στέλνει `SIGKILL`. Στο Node.js καλείτε το `stop()` μόνοι σας· σε έναν .NET host, το κάνει ο host αυτόματα.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 const shutdown = async () => {
@@ -39,8 +44,24 @@ const shutdown = async () => {
 process.on('SIGTERM', shutdown);
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+// Ο generic host σταματά στο SIGTERM, και διακόπτει τον scheduler που καταχώρισε το AddAnarchon():
+// οι εκτελούμενες εργασίες ακυρώνονται και παραδίδονται. Περιμένει έως το StopTimeout, και όχι περισσότερο
+// από το ίδιο το ShutdownTimeout του host (30 s από προεπιλογή).
+builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(25));
+builder.Services.AddAnarchon(options => options.StopTimeout = TimeSpan.FromSeconds(20))
+    .UseRedis(builder.Configuration.GetConnectionString("redis")!)
+    .AddJobs<BillingJobs>();
+```
+
+</TabItem>
+</Tabs>
+
 :::caution[PID 1]
-Αν το container σας ξεκινά το Node μέσω του `npm start` ή ενός shell script, το σήμα μπορεί να μην φτάσει ποτέ στο Node. Ξεκινήστε το απευθείας (`CMD ["node", "dist/main.js"]`), ή χρησιμοποιήστε ένα init σύστημα όπως το `tini`.
+Αν το container σας ξεκινά το Node μέσω του `npm start` ή ενός shell script, το σήμα μπορεί να μην φτάσει ποτέ στο Node. Ξεκινήστε το απευθείας (`CMD ["node", "dist/main.js"]`), ή χρησιμοποιήστε ένα init σύστημα όπως το `tini`. Το ίδιο ισχύει και για το .NET: `ENTRYPOINT ["dotnet", "Billing.dll"]`, όχι shell script.
 :::
 
 ## 2. Δώστε αρκετό χρόνο
@@ -69,7 +90,7 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
-            - name: REDIS_URL
+            - name: REDIS_URL                 # .NET: ConnectionStrings__redis
               valueFrom:
                 secretKeyRef:
                   name: billing-secrets
@@ -78,14 +99,18 @@ spec:
 
 | Ρύθμιση | Τιμή | Γιατί |
 | --- | --- | --- |
-| `stop({ timeoutMs })` | 20 s | Πόσο χρόνο να περιμένει για να σταματήσουν οι handlers |
+| `stop({ timeoutMs })`, `StopTimeout` | 20 s | Πόσο χρόνο να περιμένει για να σταματήσουν οι handlers |
+| `HostOptions.ShutdownTimeout` (.NET) | 25 s | Το όριο του host για όλες τις υπηρεσίες του· τουλάχιστον όσο το stop timeout |
 | `terminationGracePeriodSeconds` | 30 s | Πρέπει να είναι μεγαλύτερο, αλλιώς το pod σκοτώνεται κατά τη διακοπή |
 
-Αν το pod σκοτωθεί πριν ολοκληρωθεί η `stop()`, τίποτα δεν χαλάει, αλλά η εργασία δεν παραδίδεται άμεσα: ένα εφεδρικό (backup) instance την αναλαμβάνει (takeover) αφού λήξει η μίσθωση (lease), αντί για μέσα σε δύο heartbeats.
+Αν το pod σκοτωθεί πριν ολοκληρωθεί η `stop()` (`StopAsync()`), τίποτα δεν χαλάει, αλλά η εργασία δεν παραδίδεται άμεσα: ένα εφεδρικό (backup) instance την αναλαμβάνει (takeover) αφού λήξει η μίσθωση (lease), αντί για μέσα σε δύο heartbeats.
 
 ## 3. Handlers που σταματούν όταν τους ζητηθεί
 
-Η μέθοδος `stop()` ακυρώνει το `ctx.signal`. Ένας handler που κάνει throw σε αυτό το σημείο παραδίδεται αμέσως. Ένας handler που αγνοεί το signal κρατά το pod μέχρι να εκπνεύσει το stop timeout.
+Η μέθοδος `stop()` ακυρώνει το `ctx.signal` (στο .NET, ακυρώνει το `ctx.CancellationToken`). Ένας handler που κάνει throw σε αυτό το σημείο παραδίδεται αμέσως. Ένας handler που αγνοεί το signal κρατά το pod μέχρι να εκπνεύσει το stop timeout.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 scheduler.every('export', '15m', async (ctx) => {
@@ -96,13 +121,42 @@ scheduler.every('export', '15m', async (ctx) => {
 });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.Every("export", TimeSpan.FromMinutes(15), async ctx =>
+{
+    foreach (var batch in await LoadBatchesAsync(ctx.Slot))
+    {
+        await ExportBatchAsync(batch, ctx.CancellationToken); // ρίχνει OperationCanceledException κατά τη διακοπή
+    }
+});
+```
+
+</TabItem>
+</Tabs>
+
 ## Ονοματοδοσία των instances σύμφωνα με τα pods
 
-Το προεπιλεγμένο `instanceId` είναι `hostname:pid`. Μέσα σε ένα container το hostname είναι ήδη το όνομα του pod, οπότε η προεπιλογή μοιάζει με `billing-7d9f8c-x2x4q:1`. Η ρητή δήλωση του ονόματος του pod είναι πιο καθαρή:
+Το προεπιλεγμένο `instanceId` (`InstanceId`) είναι `hostname:pid`. Μέσα σε ένα container το hostname είναι ήδη το όνομα του pod, οπότε η προεπιλογή μοιάζει με `billing-7d9f8c-x2x4q:1`. Η ρητή δήλωση του ονόματος του pod είναι πιο καθαρή:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 new Scheduler({ backend: new RedisBackend({ redis: process.env.REDIS_URL }), instanceId: process.env.POD_NAME });
 ```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+builder.Services.AddAnarchon(options => options.InstanceId = Environment.GetEnvironmentVariable("POD_NAME"));
+```
+
+</TabItem>
+</Tabs>
 
 Το ιστορικό δείχνει στη συνέχεια ποιο pod εκτέλεσε κάθε προσπάθεια:
 
@@ -140,10 +194,10 @@ new Scheduler({ backend: new RedisBackend({ redis: process.env.REDIS_URL }), ins
 
 ## Μια λίστα ελέγχου
 
-- [ ] Το `scheduler.stop()` εκτελείται στο `SIGTERM`
-- [ ] Το Node λαμβάνει το σήμα (είναι PID 1, ή υπάρχει ένα init σύστημα)
+- [ ] Το `scheduler.stop()` εκτελείται στο `SIGTERM` (στο .NET, το κάνει ο host)
+- [ ] Το Node ή το `dotnet` λαμβάνει το σήμα (είναι PID 1, ή υπάρχει ένα init σύστημα)
 - [ ] Το `terminationGracePeriodSeconds` είναι μεγαλύτερο από το stop timeout
-- [ ] Οι handlers ελέγχουν το `ctx.signal`
+- [ ] Οι handlers ελέγχουν το `ctx.signal` (`ctx.CancellationToken`)
 - [ ] Τουλάχιστον δύο αντίγραφα (replicas)
 - [ ] Το `instanceId` είναι το όνομα του pod
 

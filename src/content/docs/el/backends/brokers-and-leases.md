@@ -82,7 +82,7 @@ description: Γιατί το RabbitMQ και το NATS 'msg-id' λειτουργ
 
 Σε ένα backend μόνο για claim, γράψτε κάθε εκτέλεση ώστε να επεξεργάζεται [ό,τι εκκρεμεί](../../reference/guarantees/). Μια χαμένη εκτέλεση κοστίζει τότε μια καθυστέρηση, όχι χαμένη δουλειά.
 
-Οι επιλογές που μόνο οι μισθώσεις μπορούν να τηρήσουν δεν είναι διαθέσιμες σε backend μόνο για claim: `overlap`, `maxAttempts` και `catchUpMs` στις εργασίες, `leaseMs` και `heartbeatMs` στον scheduler. Κώδικας με τύπους που τις ορίζει δεν μεταγλωττίζεται, και ένας decorator ή JavaScript που τις ορίζει παίρνει σφάλμα όταν δημιουργείται η εργασία ή ο scheduler. Αυτό ισχύει και για Redis και Valkey με στρατηγική άλλη από `lease`, και για NATS με `msg-id`.
+Οι επιλογές που μόνο οι μισθώσεις μπορούν να τηρήσουν δεν είναι διαθέσιμες σε backend μόνο για claim: `overlap`, `maxAttempts` και `catchUpMs` στις εργασίες, `leaseMs` και `heartbeatMs` στον scheduler. Κώδικας με τύπους που τις ορίζει δεν μεταγλωττίζεται, και ένας decorator ή JavaScript που τις ορίζει παίρνει σφάλμα όταν δημιουργείται η εργασία ή ο scheduler. Στο .NET (`Overlap`, `MaxAttempts`, `CatchUp`, `YieldAfterFailure`, `Lease`, `Heartbeat`), η προσθήκη της εργασίας ή η δημιουργία του scheduler εγείρει ένα `AnarchonException` με κωδικό `Unsupported`. Αυτό ισχύει και για Redis και Valkey με στρατηγική άλλη από `lease`, και για NATS με `msg-id`.
 
 ## Επόμενα βήματα
 

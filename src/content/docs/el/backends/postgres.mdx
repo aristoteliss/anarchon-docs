@@ -3,7 +3,12 @@ title: PostgreSQL
 description: Το πλήρες σύνολο δυνατοτήτων στη βάση δεδομένων που ήδη διαθέτετε.
 ---
 
-Το `PostgresBackend` σας προσφέρει όλα όσα παρέχει η στρατηγική `lease` του Redis: έναν νικητή ανά εκτέλεση, εφεδρικούς (backups), προστασία από αλληλεπικαλυπτόμενες εκτελέσεις, ανάκτηση (catch-up) και παράδοση (hand-over) κατά την κλήση του `stop()`. Απαιτεί PostgreSQL 9.5 ή νεότερο.
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Το `PostgresBackend` σας προσφέρει όλα όσα παρέχει η στρατηγική `lease` του Redis: έναν νικητή ανά εκτέλεση, εφεδρικούς (backups), προστασία από αλληλεπικαλυπτόμενες εκτελέσεις, ανάκτηση (catch-up) και παράδοση (hand-over) κατά την κλήση του `stop()`. Απαιτεί PostgreSQL 9.5 ή νεότερο. Στο .NET είναι το πακέτο `Anarchon.Postgres`, βασισμένο στο Npgsql.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 import { PostgresBackend, Scheduler } from 'anarchon';
@@ -13,9 +18,28 @@ const scheduler = new Scheduler({
 });
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+using Anarchon;
+using Anarchon.Postgres;
+
+var scheduler = new Scheduler(new SchedulerOptions
+{
+    Backend = new PostgresBackend(builder.Configuration.GetConnectionString("app")!),
+});
+```
+
+</TabItem>
+</Tabs>
+
 ## Σύνδεση
 
-Η παράμετρος `connection` δέχεται ένα connection string ή έναν client που ήδη διαθέτετε.
+Η παράμετρος `connection` δέχεται ένα connection string ή έναν client που ήδη διαθέτετε. Στο .NET, το `ConnectionString` δέχεται ένα connection string του Npgsql, και το `DataSource` το δικό σας `NpgsqlDataSource`.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 // Connection string. Το anarchon ανοίγει ένα μικρό pool με το `pg` και το κλείνει στο stop().
@@ -25,7 +49,24 @@ new PostgresBackend({ connection: process.env.DATABASE_URL }); // postgres://· 
 new PostgresBackend();
 ```
 
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+// Connection string. Το anarchon ανοίγει ένα data source (ένα pool) και το αποδεσμεύει στο StopAsync().
+new PostgresBackend("Host=db;Database=app;Username=app;Password=...");
+
+// Χωρίς connection string: Host=localhost;Database=postgres
+new PostgresBackend(new PostgresBackendOptions());
+```
+
+</TabItem>
+</Tabs>
+
 ### Το δικό σας pool ή client
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 import { Pool } from 'pg';
@@ -33,6 +74,24 @@ import { Pool } from 'pg';
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 new PostgresBackend({ connection: pool }); // το stop() δεν τερματίζει το pool
 ```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+await using var dataSource = NpgsqlDataSource.Create(builder.Configuration.GetConnectionString("app")!);
+new PostgresBackend(new PostgresBackendOptions { DataSource = dataSource }); // το StopAsync() δεν το αποδεσμεύει
+
+// Με έναν host, το data source που καταχωρεί το AddNpgsqlDataSource():
+builder.Services.AddNpgsqlDataSource(builder.Configuration.GetConnectionString("app")!);
+builder.Services.AddAnarchon()
+    .UsePostgres((services, options) => options.DataSource = services.GetRequiredService<NpgsqlDataSource>());
+```
+
+</TabItem>
+</Tabs>
+
+Στο Node.js:
 
 | Τι περνάτε | Βιβλιοθήκη |
 | --- | --- |
@@ -48,7 +107,7 @@ const sql = postgres(process.env.DATABASE_URL);
 new PostgresBackend({ connection: sql });
 ```
 
-Ένα pool είναι η καλύτερη επιλογή σε μια υπηρεσία. Ένας μεμονωμένος `Client` μπορεί να εκτελεί μόνο μία εντολή τη φορά, οπότε το anarchon τοποθετεί τις δικές του εντολές σε ουρά αναμονής πάνω σε αυτόν.
+Ένα pool είναι η καλύτερη επιλογή σε μια υπηρεσία. Ένας μεμονωμένος `Client` μπορεί να εκτελεί μόνο μία εντολή τη φορά, οπότε το anarchon τοποθετεί τις δικές του εντολές σε ουρά αναμονής πάνω σε αυτόν. Στο .NET υπάρχει μόνο το pool: ένα data source.
 
 ## Επιλογές
 
@@ -57,9 +116,11 @@ new PostgresBackend({ connection: sql });
 | `connection` | `postgres://localhost:5432/postgres` | Connection string, ή ο δικός σας client |
 | `table` | `'anarchon_runs'` | Όνομα πίνακα. Μπορεί να περιλαμβάνει schema: `'jobs.cron_runs'` |
 
+Στο .NET, το `PostgresBackendOptions` διαθέτει τα `ConnectionString` (προεπιλογή `Host=localhost;Database=postgres`), `DataSource` και `Table` (προεπιλογή `"anarchon_runs"`). Αν οριστούν ταυτόχρονα τα `ConnectionString` και `DataSource`, πετάγεται ένα `ArgumentException`.
+
 ## Πίνακες
 
-Δημιουργούνται κατά το `start()` εφόσον δεν υπάρχουν ήδη. Δεν υπάρχει πρόβλημα αν εκκινήσουν δύο instances ταυτόχρονα.
+Δημιουργούνται κατά το `start()` (`StartAsync()`) εφόσον δεν υπάρχουν ήδη. Δεν υπάρχει πρόβλημα αν εκκινήσουν δύο instances ταυτόχρονα.
 
 | Πίνακας | Μία γραμμή ανά | Περιεχόμενο |
 | --- | --- | --- |
@@ -68,13 +129,26 @@ new PostgresBackend({ connection: sql });
 | `<table>_jobs` | εργασία (job) | η γραμμή που εξασφαλίζει ότι τα claims μιας εργασίας εκτελούνται διαδοχικά |
 | `<table>_meta` | ρύθμιση | η μορφή του store, ώστε τα δεδομένα ενός νεότερου anarchon να μη διαβάζονται ποτέ λάθος |
 
-Αν ο χρήστης βάσης δεδομένων της εφαρμογής σας δεν έχει δικαιώματα δημιουργίας πινάκων, δημιουργήστε τους μία φορά με έναν προνομιούχο χρήστη εκτελώντας το `start()` σε ένα βήμα migration, και στη συνέχεια εκχωρήστε δικαιώματα `SELECT, INSERT, UPDATE, DELETE` στους τέσσερις πίνακες.
+Αν ο χρήστης βάσης δεδομένων της εφαρμογής σας δεν έχει δικαιώματα δημιουργίας πινάκων, δημιουργήστε τους μία φορά με έναν προνομιούχο χρήστη εκτελώντας το `start()` (`StartAsync()`) σε ένα βήμα migration, και στη συνέχεια εκχωρήστε δικαιώματα `SELECT, INSERT, UPDATE, DELETE` στους τέσσερις πίνακες.
 
 Για να τους διατηρήσετε εκτός του κύριου schema σας:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
 
 ```ts
 new PostgresBackend({ connection: pool, table: 'jobs.cron_runs' }); // το schema πρέπει να υπάρχει ήδη
 ```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+new PostgresBackend(new PostgresBackendOptions { DataSource = dataSource, Table = "jobs.cron_runs" }); // το schema πρέπει να υπάρχει ήδη
+```
+
+</TabItem>
+</Tabs>
 
 ## Πώς κερδίζει ένα instance
 
@@ -122,7 +196,7 @@ sequenceDiagram
 
 ## Ιστορικό
 
-Το ιστορικό βρίσκεται στον πίνακα `<table>_attempts`, περικομμένο σε περίπου `historySize` προσπάθειες ανά εργασία και βάσει του `historyTtlMs` αν το έχετε ορίσει. Επειδή είναι ένας συνηθισμένος πίνακας, μπορείτε να κάνετε queries μόνοι σας:
+Το ιστορικό βρίσκεται στον πίνακα `<table>_attempts`, περικομμένο σε περίπου `historySize` προσπάθειες ανά εργασία και βάσει του `historyTtlMs` (`HistoryTtl`) αν το έχετε ορίσει. Επειδή είναι ένας συνηθισμένος πίνακας, μπορείτε να κάνετε queries μόνοι σας:
 
 ```sql
 SELECT job, slot, attempt, instance_id, reason, claimed_at
@@ -132,7 +206,7 @@ ORDER BY slot DESC, attempt DESC
 LIMIT 20;
 ```
 
-Αντιμετωπίστε τη δομή του πίνακα ως εσωτερική: μπορεί να αλλάξει μεταξύ εκδόσεων. Η μέθοδος `scheduler.history()` είναι ο σταθερός τρόπος ανάγνωσής του.
+Αντιμετωπίστε τη δομή του πίνακα ως εσωτερική: μπορεί να αλλάξει μεταξύ εκδόσεων. Η μέθοδος `scheduler.history()` (`HistoryAsync()` στο .NET) είναι ο σταθερός τρόπος ανάγνωσής του. Τα backends σε Node.js και .NET χρησιμοποιούν τους ίδιους πίνακες, επομένως instances και των δύο μπορούν να τους μοιράζονται.
 
 ## Επόμενα βήματα
 

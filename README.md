@@ -77,8 +77,7 @@ stored data and the guarantees, so most pages are shared. What differs is the AP
   and `reference/dotnet/` the .NET API.
 - **.NET examples** follow `examples/` in anarchon-dotnet: `TimeSpan` values, `CancellationToken`,
   `async` handlers, C# events, attributes.
-- **Greek** pages (`el/`) are translated from the English ones, Node.js only for now: add the .NET tabs
-  there when the English page settles.
+- **Greek** pages (`el/`) are translated from the English ones.
 
 ## Adding a language
 

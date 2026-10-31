@@ -1,0 +1,230 @@
+---
+title: Δεδομένα εκτέλεσης
+description: Δώστε στις εκτελέσεις μιας εργασίας τα δεδομένα που χρειάζονται, όπως ένα δικαίωμα, έναν tenant ή ένα φρέσκο token, και διαβάστε τα στον handler ως ctx.data (ctx.Data, ctx.GetData<T>() στο .NET).
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Ένας handler είναι μια συνηθισμένη συνάρτηση, οπότε μπορεί να χρησιμοποιήσει ό,τι βρίσκεται στο scope γύρω του. Η επιλογή δεδομένων (`data`, `Data`) είναι για ό,τι δεν βρίσκεται εκεί: τιμές που αποφασίζετε εκεί όπου ορίζεται η εργασία ή δημιουργείται ο scheduler, και τις θέλετε στον handler όταν ξεκινά μια εκτέλεση.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
+```ts
+const scheduler = new Scheduler({ backend, data: { tenant: 'acme' } });
+
+scheduler.every('export', '1h', async (ctx: JobContext<{ tenant: string; permission: string }>) => {
+  await exportFor(ctx.data.tenant, ctx.data.permission);
+}, { data: { permission: 'reports:export' } });
+```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+var scheduler = new Scheduler(new SchedulerOptions { Backend = backend, Data = new Dictionary<string, object?> { ["tenant"] = "acme" } });
+
+scheduler.Every("export", TimeSpan.FromHours(1), async ctx =>
+{
+    var data = ctx.GetData<IReadOnlyDictionary<string, object?>>();
+    await ExportForAsync((string)data["tenant"]!, (string)data["permission"]!, ctx.CancellationToken);
+}, new() { Data = new Dictionary<string, object?> { ["permission"] = "reports:export" } });
+```
+
+</TabItem>
+</Tabs>
+
+Κάθε εκτέλεση τα λαμβάνει ως `ctx.data` (`ctx.Data`). Είναι `undefined` (`null`) όταν δεν έχετε δώσει κανένα.
+
+## Από πού προέρχονται τα δεδομένα
+
+| Δίνονται σε | Ισχύουν για | Παράδειγμα |
+| --- | --- | --- |
+| Τις επιλογές του scheduler | Κάθε εργασία του scheduler | `new Scheduler({ data: ... })`· `SchedulerOptions.Data` |
+| Προεπιλογές καταχώρισης | Κάθε εργασία ενός αντικειμένου με decorators/attributes | `register(object, { defaults: { data } })`· `Register(object, new RegisterOptions { Defaults = new() { Data = ... } })` |
+| Τις επιλογές μιας εργασίας | Αυτή την εργασία | `{ data: ... }`· `new() { Data = ... }` |
+| Έναν decorator (Node.js) | Αυτή την εργασία | `@Every('export', '1h', { data: ... })` |
+| Μια χειροκίνητη εκτέλεση | Μία χειροκίνητη εκτέλεση | `runNow('export', { data: ... })`· `RunNowAsync("export", data)` |
+
+Είναι στρώματα, από το πιο γενικό στο πιο ειδικό, με τη σειρά του πίνακα. Δύο απλά αντικείμενα (στο .NET, δύο `IReadOnlyDictionary<string, object?>` όπως ένα `Dictionary<string, object?>`) συγχωνεύονται, και τα κλειδιά του πιο ειδικού υπερισχύουν. Οποιαδήποτε άλλη τιμή (string, αριθμός, πίνακας, instance κλάσης ή record) αντικαθιστά ό,τι βρίσκεται από κάτω της.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
+```ts
+const scheduler = new Scheduler({ backend, data: { tenant: 'acme', region: 'eu' } });
+scheduler.every('export', '1h', run, { data: { region: 'us', permission: 'export' } });
+
+await scheduler.runNow('export');
+// ctx.data: { tenant: 'acme', region: 'us', permission: 'export' }
+
+await scheduler.runNow('export', { data: { permission: 'admin' } });
+// ctx.data: { tenant: 'acme', region: 'us', permission: 'admin' }
+```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+var scheduler = new Scheduler(new SchedulerOptions { Backend = backend, Data = new Dictionary<string, object?> { ["tenant"] = "acme", ["region"] = "eu" } });
+scheduler.Every("export", TimeSpan.FromHours(1), RunAsync, new() { Data = new Dictionary<string, object?> { ["region"] = "us", ["permission"] = "export" } });
+
+await scheduler.RunNowAsync("export");
+// ctx.Data: { tenant = acme, region = us, permission = export }
+
+await scheduler.RunNowAsync("export", new Dictionary<string, object?> { ["permission"] = "admin" });
+// ctx.Data: { tenant = acme, region = us, permission = admin }
+```
+
+</TabItem>
+</Tabs>
+
+## Ανάγνωση όταν ξεκινά η εκτέλεση
+
+Τα δεδομένα μπορούν να είναι συνάρτηση (στο .NET, ένα `JobDataProvider`). Καλείται όταν ξεκινά κάθε εκτέλεση, οπότε ο handler παίρνει την τιμή όπως είναι εκείνη τη στιγμή: ένα token που λήγει, τα δικαιώματα που έχει τώρα ένας χρήστης, ένα feature flag.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
+```ts
+scheduler.every('sync', '5m', sync, {
+  data: async (run) => ({
+    token: await auth.tokenFor('sync-service'),   // φρέσκο για αυτή την εκτέλεση
+    startedBy: run.manual ? 'operator' : 'schedule',
+  }),
+});
+```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.Every("sync", TimeSpan.FromMinutes(5), SyncAsync, new()
+{
+    Data = new JobDataProvider(async run => new Dictionary<string, object?>
+    {
+        ["token"] = await auth.TokenForAsync("sync-service"),   // φρέσκο για αυτή την εκτέλεση
+        ["startedBy"] = run.IsManual ? "operator" : "schedule",
+    }),
+});
+```
+
+</TabItem>
+</Tabs>
+
+Η συνάρτηση λαμβάνει την εκτέλεση: ό,τι υπάρχει στο [`ctx`](../writing-handlers/#το-context-ctx) εκτός από τα ίδια τα δεδομένα, μαζί με την ακύρωσή της. Μπορεί να είναι async (στο .NET επιστρέφει `ValueTask<object?>`).
+
+| Αν η συνάρτηση | Τότε |
+| --- | --- |
+| Ρίξει σφάλμα ή απορριφθεί | Η εκτέλεση αποτυγχάνει με αυτό το σφάλμα, όπως ένας handler που ρίχνει σφάλμα. Ο handler δεν καλείται |
+| Είναι πιο αργή από το timeout της εργασίας | Η εκτέλεση λήγει λόγω timeout |
+
+:::note[Μια συνάρτηση καλείται πάντα]
+Για να περάσετε μια συνάρτηση ως τα ίδια τα δεδομένα, βάλτε τη μέσα σε ένα αντικείμενο: `{ data: { notify: sendMail } }`. Στο .NET καλείται μόνο ένα `JobDataProvider`· οποιοδήποτε άλλο delegate αντιμετωπίζεται ως απλά δεδομένα.
+:::
+
+## Αλλαγή τους ενώ ο scheduler εκτελείται
+
+Το `setData()` (`SetData()`) αντικαθιστά τα δεδομένα του scheduler. Οι εκτελέσεις που ξεκινούν μετά παίρνουν τα νέα· όσες βρίσκονται σε εξέλιξη κρατούν τα δικά τους.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
+```ts
+scheduler.setData({ tenant: 'acme', features: await loadFeatures() });
+events.on('features-changed', (features) => scheduler.setData({ tenant: 'acme', features }));
+```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+scheduler.SetData(new Dictionary<string, object?> { ["tenant"] = "acme", ["features"] = await LoadFeaturesAsync() });
+featureFlags.Changed += (_, features) => scheduler.SetData(new Dictionary<string, object?> { ["tenant"] = "acme", ["features"] = features });
+```
+
+</TabItem>
+</Tabs>
+
+Για μία μόνο εκτέλεση, περάστε δεδομένα στη χειροκίνητη εκτέλεση:
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
+```ts
+app.post('/jobs/:name/run', async (req, res) => {
+  const run = await scheduler.runNow(req.params.name, { data: { requestedBy: req.user.id } });
+  res.json({ status: run.status });
+});
+```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+app.MapPost("/jobs/{name}/run", async (string name, ClaimsPrincipal user, Scheduler scheduler) =>
+{
+    var run = await scheduler.RunNowAsync(name, new Dictionary<string, object?> { ["requestedBy"] = user.Identity?.Name });
+    return new { status = run.Status.ToString() };
+});
+```
+
+</TabItem>
+</Tabs>
+
+## Τύπος των δεδομένων
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
+Το `ctx.data` είναι `unknown`, εκτός αν πείτε τι είναι. Ονομάστε τον τύπο στον handler:
+
+</TabItem>
+<TabItem label=".NET">
+
+Το `ctx.Data` είναι `object?`. Διαβάστε το με τον τύπο που δώσατε μέσω του `ctx.GetData<T>()`, το οποίο ρίχνει `InvalidOperationException` που αναφέρει και τους δύο τύπους όταν είναι κάτι άλλο (και η εκτέλεση αποτυγχάνει). Ένα δικό σας record διαβάζεται καλύτερα· τα dictionaries είναι για δεδομένα που συγχωνεύονται από στρώματα:
+
+```csharp
+public sealed record ExportData(string Tenant, string Permission);
+
+scheduler.Every("export", TimeSpan.FromHours(1), ctx =>
+{
+    var data = ctx.GetData<ExportData>(); // ExportData
+    return ExportForAsync(data.Tenant, data.Permission, ctx.CancellationToken);
+}, new() { Data = new ExportData("acme", "reports:export") });
+```
+
+</TabItem>
+</Tabs>
+
+```ts
+interface ExportData {
+  tenant: string;
+  permission: string;
+}
+
+scheduler.every('export', '1h', async (ctx: JobContext<ExportData>) => {
+  ctx.data.tenant; // string
+});
+
+class Reports {
+  @Every('export', '1h')
+  async export(ctx: JobContext<ExportData>) {}
+}
+```
+
+Στην TypeScript ο τύπος είναι η δική σας δήλωση για το τι ρυθμίσατε: το anarchon δεν ελέγχει την τιμή απέναντί του.
+
+## Τι δεν είναι τα δεδομένα εκτέλεσης
+
+- **Δεν μοιράζονται μεταξύ instances.** Κάθε instance φτιάχνει τα δεδομένα των εκτελέσεων που τρέχει το ίδιο, από τις δικές του ρυθμίσεις. Δώστε σε κάθε instance τις ίδιες, όπως και τις ίδιες τις εργασίες.
+- **Δεν αποθηκεύονται.** Δεν γράφονται στο store ούτε στο ιστορικό, οπότε μπορούν να περιέχουν μυστικά και αντικείμενα όπως έναν database client.
+- **Δεν είναι payload ανά εκτέλεση από άλλο instance.** Μια εκτέλεση ορίζεται από τον χρόνο της, όχι από ένα μήνυμα. Για να μεταφέρετε δουλειά από ένα σημείο σε άλλο, χρησιμοποιήστε μια ουρά.
+
+Εκτελέσιμα παραδείγματα: [`examples/run-data.ts`](https://github.com/aristoteliss/anarchon/blob/main/examples/run-data.ts) (`pnpm example:run-data`) και [`examples/RunData`](https://github.com/aristoteliss/anarchon-dotnet/tree/main/examples/RunData) (`dotnet run --project examples/RunData`).
+
+## Επόμενα βήματα
+
+- [Συγγραφή handlers](../writing-handlers/): το υπόλοιπο `ctx`
+- [Decorators](../decorators/) και [attributes](../attributes/): δεδομένα σε δηλωμένες εργασίες και αντικείμενα
+- [Scheduler API](../../reference/scheduler/#setdatadata)
