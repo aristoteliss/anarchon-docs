@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.astro/
+*.log
+.DS_Store
+.idea/
+
+# internal notes and drafts: private until the owner publishes them
+internal/

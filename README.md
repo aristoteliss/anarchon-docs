@@ -3,10 +3,10 @@
 The documentation site, built with [Astro](https://astro.build) and [Starlight](https://starlight.astro.build).
 
 ```sh
-pnpm docs:dev       # from the repository root: http://localhost:4321, reloads on save
-pnpm docs:build     # static site in docs/dist
-pnpm docs:preview   # serve the built site
-pnpm docs:check     # every diagram parses
+pnpm dev       # from the repository root: http://localhost:4321, reloads on save
+pnpm build     # static site in dist
+pnpm preview   # serve the built site
+pnpm check:diagrams     # every diagram parses
 ```
 
 ## Layout
@@ -34,7 +34,7 @@ docs/
 - A page is a Markdown file with `title` and `description` in its front matter. Quote a value that contains a colon.
 - Add a new page to the `sidebar` in `astro.config.mjs`, or it won't appear in the navigation.
 - Link to other pages with **relative** links that end in a slash (`../job-options/`, `../../internals/leases/#fencing`), so the site also works under a sub-path.
-- Diagrams are fenced code blocks with the language `mermaid`. They are drawn in the browser, so a syntax error doesn't fail the build: run `pnpm docs:check` after editing one.
+- Diagrams are fenced code blocks with the language `mermaid`. They are drawn in the browser, so a syntax error doesn't fail the build: run `pnpm check:diagrams` after editing one.
 - Notes use Starlight's asides: `:::note`, `:::tip`, `:::caution`.
 - Code examples in the pages are not compiled. Keep them close to the files in `examples/`, which are.
 
@@ -101,4 +101,4 @@ Keep slugs (file names) in English in every language, so links and the language 
 
 ## Deploying
 
-Set `site` in `astro.config.mjs`, and `base` when the site is not served from the root of its domain (for example `base: '/anarchon'` on GitHub Pages). Then publish `docs/dist`.
+Set `site` in `astro.config.mjs`, and `base` when the site is not served from the root of its domain (for example `base: '/anarchon'` on GitHub Pages). Then publish `dist`.
