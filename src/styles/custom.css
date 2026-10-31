@@ -18,3 +18,25 @@
 .sl-markdown-content th code {
   white-space: nowrap;
 }
+
+/* Home page: less room above and below the title than Starlight's hero gives (up to 10rem). */
+.hero {
+  padding-block: 1.5rem 1rem;
+}
+
+@media (min-width: 50rem) {
+  .hero {
+    padding-block: 2.5rem 1.5rem;
+  }
+}
+
+/* Badges in one row: Starlight shows every content image as a block. */
+.sl-markdown-content .badges p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.sl-markdown-content .badges img {
+  display: inline-block;
+}

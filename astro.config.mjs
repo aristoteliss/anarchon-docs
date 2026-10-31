@@ -114,11 +114,11 @@ const sidebar = [
 ];
 
 // Social cards need an absolute URL: the image is docs/public/og.png, rendered from assets/social-card.svg.
-const socialCard = 'https://aristoteliss.github.io/anarchon/og.png';
+const socialCard = 'https://aristoteliss.github.io/anarchon-docs/og.png';
 
 export default defineConfig({
   site: 'https://aristoteliss.github.io',
-  base: '/anarchon',
+  base: '/anarchon-docs',
   integrations: [
     mermaid({ autoTheme: true }),
     starlight({
