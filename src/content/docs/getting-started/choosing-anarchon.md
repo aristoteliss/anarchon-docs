@@ -22,7 +22,7 @@ What this page says about other tools was checked on **13 October 2026** against
 ## anarchon
 
 - **Where the job runs.** Inside the instances of your service: the handler is a function in your application.
-- **What it needs.** A store all instances reach: Redis, Valkey, PostgreSQL, SQLite on one machine, or a libSQL server. NATS works too, with its `lease` strategy; RabbitMQ works with fewer features.
+- **What it needs.** A store all instances reach: Redis, Valkey, PostgreSQL, SQL Server (.NET only), SQLite on one machine, or a libSQL server. NATS works too, with its `lease` strategy; RabbitMQ works with fewer features.
 - **Who runs a scheduled time.** Every instance computes the same slot and tries to claim it; one atomic step in the store lets one instance win each attempt.
 - **When the runner dies.** On a lease backend, another instance starts the run again as a new attempt, about one lease later, up to `maxAttempts`. The handler starts from the beginning. On RabbitMQ, NATS with `msg-id` and the simple Redis strategies the run is lost.
 - **Long runs.** On a lease backend the next run of a job is skipped while the current one holds a live lease.

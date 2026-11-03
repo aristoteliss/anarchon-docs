@@ -65,7 +65,7 @@ The scheduler picks a runner once, when it is created, based on the backend:
 ```mermaid
 flowchart LR
   backend{"does the backend<br/>provide leases?"}
-  backend -- "yes: Redis 'lease',<br/>PostgreSQL, SQLite, NATS 'lease'" --> lr["LeaseRunner"]
+  backend -- "yes: Redis 'lease',<br/>PostgreSQL, SQL Server, SQLite, NATS 'lease'" --> lr["LeaseRunner"]
   backend -- "no: Redis 'stream-id', 'idmp', 'script',<br/>RabbitMQ, NATS 'msg-id'" --> cr["ClaimOnlyRunner"]
 ```
 

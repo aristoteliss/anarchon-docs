@@ -299,6 +299,7 @@ const scheduler = new Scheduler({
 ```sh
 dotnet add package Anarchon.Redis      # Redis or Valkey
 dotnet add package Anarchon.Postgres   # PostgreSQL
+dotnet add package Anarchon.SqlServer  # SQL Server or Azure SQL
 ```
 
 ```csharp
@@ -307,6 +308,9 @@ Backend = new RedisBackend("localhost:6379"),
 
 // PostgreSQL
 Backend = new PostgresBackend(Environment.GetEnvironmentVariable("DATABASE_URL")!), // an Npgsql connection string
+
+// SQL Server or Azure SQL
+Backend = new SqlServerBackend(Environment.GetEnvironmentVariable("SQLSERVER_URL")!), // a SqlClient connection string
 ```
 
 </TabItem>

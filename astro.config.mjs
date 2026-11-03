@@ -48,6 +48,7 @@ const sidebar = [
       'backends/overview',
       'backends/redis',
       'backends/postgres',
+      'backends/sqlserver',
       'backends/sqlite',
       'backends/rabbitmq',
       'backends/nats',

@@ -15,7 +15,7 @@ This is the .NET counterpart of the [Express](../express/) and [NestJS](../nestj
 ## Install
 
 ```sh
-dotnet add package Anarchon.Postgres   # or Anarchon.Redis, Anarchon.Sqlite, Anarchon.RabbitMQ, Anarchon.Nats
+dotnet add package Anarchon.Postgres   # or Anarchon.Redis, Anarchon.SqlServer, Anarchon.Sqlite, Anarchon.RabbitMQ, Anarchon.Nats
 ```
 
 Each backend package brings `Anarchon` and the `UsePostgres()`, `UseRedis()` (and so on) methods.

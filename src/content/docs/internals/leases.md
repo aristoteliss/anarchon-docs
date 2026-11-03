@@ -5,7 +5,7 @@ description: Heartbeats, backups, takeover, fencing, overlap, hand-over and catc
 
 A claim decides who **starts** a run. A lease is how the cluster finds out the runner **stopped**.
 
-This page applies to the lease backends: Redis and Valkey with the `lease` strategy, PostgreSQL and SQLite. The rules are the same on all three.
+This page applies to the lease backends: Redis and Valkey with the `lease` strategy, PostgreSQL, SQL Server (.NET) and SQLite. The rules are the same on all of them.
 
 ## What a lease is
 
