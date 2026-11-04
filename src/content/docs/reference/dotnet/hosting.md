@@ -50,6 +50,7 @@ Each backend package adds three overloads to `AnarchonBuilder`:
 | --- | --- |
 | `Anarchon.Redis` | `UseRedis(string configuration)`, `UseRedis(Action<RedisBackendOptions>)`, `UseRedis(Action<IServiceProvider, RedisBackendOptions>)` |
 | `Anarchon.Postgres` | `UsePostgres(string connectionString)`, and the two option forms |
+| `Anarchon.SqlServer` | `UseSqlServer(string connectionString)`, and the two option forms |
 | `Anarchon.Sqlite` | `UseSqlite(string connectionString)`, and the two option forms |
 | `Anarchon.RabbitMQ` | `UseRabbitMQ(string connectionString)`, and the two option forms |
 | `Anarchon.Nats` | `UseNats(string connectionString)`, and the two option forms |

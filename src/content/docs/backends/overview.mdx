@@ -14,6 +14,7 @@ flowchart TD
   start{"What do your instances<br/>already share?"}
   start -- "Redis or Valkey" --> redis["Redis backend, 'lease' strategy<br/>(the default)"]
   start -- "PostgreSQL" --> pg["PostgresBackend"]
+  start -- "SQL Server or Azure SQL" --> mssql["SqlServerBackend<br/>(.NET only)"]
   start -- "Only one machine" --> sqlite["SqliteBackend on a file"]
   start -- "A libSQL server or Turso" --> libsql["SqliteBackend with a libSQL client<br/>(Node.js only)"]
   start -- "Only RabbitMQ" --> rabbit["RabbitMQBackend<br/>(claim only)"]
@@ -26,23 +27,23 @@ Use what you already run. If you have both Redis and PostgreSQL, Redis has the l
 
 "Other strategies" means Redis or Valkey with `stream-id` or `script`, and Redis with `idmp`.
 
-| | Redis / Valkey `lease` | Redis / Valkey other strategies | PostgreSQL | SQLite / libSQL | RabbitMQ | NATS `msg-id` | NATS `lease` |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| One winner per run | yes | yes | yes | yes | yes | yes | yes |
-| A backup takes over a dead runner | yes | no | yes | yes | no | no | yes |
-| No overlapping runs (`overlap: 'skip'`) | yes | no | yes | yes | no | no | yes |
-| Retries after a dead runner (`maxAttempts`) | yes | no | yes | yes | no | no | yes |
-| Catch-up after downtime (`catchUpMs`) | yes | no | yes | yes | no | no | yes |
-| Healthy instances claim first after a failure (`yieldAfterFailure`) | yes | no | yes | yes | no | no | yes |
-| Hand-over on `stop()` | yes | no | yes | yes | no | no | yes |
-| History (`history()`, `lastRun()`) | yes | yes | yes | yes | yes | yes | yes |
-| History by age (`historyTtlMs`) | yes | yes ¹ | yes | yes | no | no | no |
-| `historySize` per job | yes | yes | yes | yes | yes | shared ² | shared ² |
-| How long a claimed run is remembered | always | `stream-id` always, `idmp` `durationSec`, `script` `windowMs` | always | always | `slotTtlMs` | `duplicateWindowMs` | always |
-| Job names | any | any | any | any | letters, digits, `_`, `-` | letters, digits, `_`, `-` | letters, digits, `_`, `-` |
-| Instances on several machines | yes | yes | yes | with a libSQL server | yes | yes | yes |
-| Needs | Redis 5+ or Valkey | Redis 5+ or Valkey; `idmp` Redis 8.6+ | PostgreSQL 9.5+ | SQLite 3.35+ | RabbitMQ 3.9+ | JetStream | JetStream on nats-server 2.10+, `@nats-io/kv` |
-| .NET package | `Anarchon.Redis` | `Anarchon.Redis` | `Anarchon.Postgres` | `Anarchon.Sqlite`, files only | `Anarchon.RabbitMQ` | `Anarchon.Nats` | `Anarchon.Nats` |
+| | Redis / Valkey `lease` | Redis / Valkey other strategies | PostgreSQL | SQL Server (.NET) | SQLite / libSQL | RabbitMQ | NATS `msg-id` | NATS `lease` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| One winner per run | yes | yes | yes | yes | yes | yes | yes | yes |
+| A backup takes over a dead runner | yes | no | yes | yes | yes | no | no | yes |
+| No overlapping runs (`overlap: 'skip'`) | yes | no | yes | yes | yes | no | no | yes |
+| Retries after a dead runner (`maxAttempts`) | yes | no | yes | yes | yes | no | no | yes |
+| Catch-up after downtime (`catchUpMs`) | yes | no | yes | yes | yes | no | no | yes |
+| Healthy instances claim first after a failure (`yieldAfterFailure`) | yes | no | yes | yes | yes | no | no | yes |
+| Hand-over on `stop()` | yes | no | yes | yes | yes | no | no | yes |
+| History (`history()`, `lastRun()`) | yes | yes | yes | yes | yes | yes | yes | yes |
+| History by age (`historyTtlMs`) | yes | yes ¹ | yes | yes | yes | no | no | no |
+| `historySize` per job | yes | yes | yes | yes | yes | yes | shared ² | shared ² |
+| How long a claimed run is remembered | always | `stream-id` always, `idmp` `durationSec`, `script` `windowMs` | always | always | always | `slotTtlMs` | `duplicateWindowMs` | always |
+| Job names | any | any | any | any, up to 400 characters | any | letters, digits, `_`, `-` | letters, digits, `_`, `-` | letters, digits, `_`, `-` |
+| Instances on several machines | yes | yes | yes | yes | with a libSQL server | yes | yes | yes |
+| Needs | Redis 5+ or Valkey | Redis 5+ or Valkey; `idmp` Redis 8.6+ | PostgreSQL 9.5+ | SQL Server 2016+ or Azure SQL | SQLite 3.35+ | RabbitMQ 3.9+ | JetStream | JetStream on nats-server 2.10+, `@nats-io/kv` |
+| .NET package | `Anarchon.Redis` | `Anarchon.Redis` | `Anarchon.Postgres` | `Anarchon.SqlServer` | `Anarchon.Sqlite`, files only | `Anarchon.RabbitMQ` | `Anarchon.Nats` | `Anarchon.Nats` |
 
 The table uses the Node.js names. In .NET they are `PascalCase` without `Ms` and take a `TimeSpan`: `Overlap = OverlapPolicy.Skip`, `MaxAttempts`, `CatchUp`, `YieldAfterFailure`, `HistoryAsync()`, `LastRunAsync()`, `HistoryTtl`, `HistorySize`, `StopAsync()`. The strategies are `RedisStrategy.Lease`, `StreamId`, `Idmp`, `Script` and `NatsStrategy.MsgId`, `Lease`.
 
@@ -138,6 +139,8 @@ The options of the backend objects themselves. Every backend also accepts a clie
 | | `Prefix` | `"cron:"` | Keeps services that share a Redis apart. Valkey uses the same backend |
 | `PostgresBackend` | `ConnectionString` / `DataSource` | `Host=localhost;Database=postgres` | An Npgsql connection string, or your `NpgsqlDataSource` |
 | | `Table` | `"anarchon_runs"` | The tables' name, schema allowed; keeps services apart |
+| `SqlServerBackend` | `ConnectionString` | required | A Microsoft.Data.SqlClient connection string. .NET only |
+| | `Table` | `"anarchon_runs"` | As above |
 | `SqliteBackend` | `ConnectionString` | `Data Source=anarchon.db` | A Microsoft.Data.Sqlite connection string naming a file. Its `Default Timeout` is how long a claim waits for another process's write |
 | | `Table` | `"anarchon_runs"` | As above, without a schema |
 | `RabbitMQBackend` | `ConnectionString` / `Connection` | `amqp://localhost` | An AMQP URI, or your `IConnection` |
@@ -175,6 +178,7 @@ var config = builder.Configuration;
 new RedisBackend(new RedisBackendOptions { Configuration = config.GetConnectionString("redis"), Strategy = RedisStrategy.Script, ScriptWindow = TimeSpan.FromMinutes(10), Prefix = "billing:cron:" });
 new RedisBackend(new RedisBackendOptions { Configuration = config.GetConnectionString("valkey") }); // Valkey
 new PostgresBackend(new PostgresBackendOptions { DataSource = dataSource, Table = "scheduler.runs" });
+new SqlServerBackend(new SqlServerBackendOptions { ConnectionString = config.GetConnectionString("sqlserver"), Table = "scheduler.runs" });
 new SqliteBackend(new SqliteBackendOptions { ConnectionString = "Data Source=/var/lib/app/jobs.db;Default Timeout=10" });
 new RabbitMQBackend(new RabbitMQBackendOptions { ConnectionString = config.GetConnectionString("amqp"), Prefix = "billing.cron.", SlotTtl = TimeSpan.FromMinutes(10) });
 new NatsBackend(new NatsBackendOptions { ConnectionString = "nats://n1:4222,nats://n2:4222", Replicas = 3, DuplicateWindow = TimeSpan.FromMinutes(10) });
@@ -199,7 +203,7 @@ The [examples folder](https://github.com/aristoteliss/anarchon/tree/main/example
 
 The split comes from what the store can express.
 
-A **lease backend** stores, for each run, who is running it and until when. Other instances can read that and act on it. Redis (with a Lua script), PostgreSQL and SQLite (with a transaction) can all do "read the run, decide, write" as one atomic step. NATS with the `lease` strategy does it with a key-value write that succeeds only if nobody wrote since the read.
+A **lease backend** stores, for each run, who is running it and until when. Other instances can read that and act on it. Redis (with a Lua script), PostgreSQL, SQL Server and SQLite (with a transaction) can all do "read the run, decide, write" as one atomic step. NATS with the `lease` strategy does it with a key-value write that succeeds only if nobody wrote since the read.
 
 A **claim-only backend** can answer exactly one question atomically: "was I first?" RabbitMQ and NATS `msg-id` use broker features that can tell a publisher it was first, but leave no record that a backup could check later and atomically replace. [Brokers and leases](../brokers-and-leases/) explains why, and what could change it.
 
@@ -228,6 +232,7 @@ Each store has a different primitive that lets exactly one writer succeed. The d
 | Redis `idmp` | `XADD ... IDMP`; Redis keeps the first entry for an idempotency key |
 | Redis `script` | A Lua script that appends the run only if it isn't in the stream |
 | PostgreSQL | One transaction on the run's row, serialized per job |
+| SQL Server (.NET) | One transaction on the run's row, serialized per job by an application lock |
 | SQLite | One `BEGIN IMMEDIATE` transaction; SQLite has one writer at a time |
 | RabbitMQ | A queue that holds one message and rejects the rest, with publisher confirms |
 | NATS `msg-id` | JetStream de-duplication by message ID |
@@ -260,10 +265,12 @@ using Anarchon.Postgres;  // Anarchon.Postgres package
 using Anarchon.RabbitMQ;  // Anarchon.RabbitMQ package
 using Anarchon.Redis;     // Anarchon.Redis package
 using Anarchon.Sqlite;    // Anarchon.Sqlite package
+using Anarchon.SqlServer; // Anarchon.SqlServer package
 
 new Scheduler(new SchedulerOptions { Backend = new RedisBackend(new RedisBackendOptions { Configuration = "localhost:6379" }) });
 new Scheduler(new SchedulerOptions { Backend = new PostgresBackend(new PostgresBackendOptions { ConnectionString = config.GetConnectionString("app") }) });
 new Scheduler(new SchedulerOptions { Backend = new SqliteBackend(new SqliteBackendOptions { ConnectionString = "Data Source=jobs.db" }) });
+new Scheduler(new SchedulerOptions { Backend = new SqlServerBackend(new SqlServerBackendOptions { ConnectionString = config.GetConnectionString("sqlserver") }) });
 new Scheduler(new SchedulerOptions { Backend = new RabbitMQBackend(new RabbitMQBackendOptions { ConnectionString = "amqp://localhost" }) });
 new Scheduler(new SchedulerOptions { Backend = new NatsBackend(new NatsBackendOptions { ConnectionString = "nats://localhost:4222", Strategy = NatsStrategy.Lease }) });
 ```
@@ -271,9 +278,9 @@ new Scheduler(new SchedulerOptions { Backend = new NatsBackend(new NatsBackendOp
 </TabItem>
 </Tabs>
 
-With a .NET host, `AddAnarchon()` followed by `UseRedis()`, `UsePostgres()`, `UseSqlite()`, `UseRabbitMQ()` or `UseNats()` does the same; each takes a connection string or a callback that sets the options. See [ASP.NET Core](../../recipes/aspnet-core/).
+With a .NET host, `AddAnarchon()` followed by `UseRedis()`, `UsePostgres()`, `UseSqlServer()`, `UseSqlite()`, `UseRabbitMQ()` or `UseNats()` does the same; each takes a connection string or a callback that sets the options. See [ASP.NET Core](../../recipes/aspnet-core/).
 
-`scheduler.backend.name` (`scheduler.Backend.Name` in .NET) tells you which one is in use: `'redis:lease'`, `'postgres'`, `'sqlite'`, `'rabbitmq'`, `'nats'` or `'nats:lease'`.
+`scheduler.backend.name` (`scheduler.Backend.Name` in .NET) tells you which one is in use: `'redis:lease'`, `'postgres'`, `'sqlite'`, `'rabbitmq'`, `'nats'` or `'nats:lease'`, and `"sqlserver"` for the .NET SQL Server backend.
 
 ## Your own connections
 
@@ -312,7 +319,7 @@ Two services on the same Redis or database must not see each other's jobs. Give 
 | Backend | Option | Default |
 | --- | --- | --- |
 | Redis / Valkey | `prefix` | `'cron:'` |
-| PostgreSQL / SQLite | `table` | `'anarchon_runs'` |
+| PostgreSQL / SQL Server / SQLite | `table` | `'anarchon_runs'` |
 | RabbitMQ | `prefix` | `'cron.'` |
 | NATS | `prefix` and `stream` | `'cron.'`, `'CRON'` |
 
@@ -322,4 +329,4 @@ Instances of the **same** service must use the same value. See [Several services
 
 ## Next
 
-Pick your store: [Redis and Valkey](../redis/), [PostgreSQL](../postgres/), [SQLite and libSQL](../sqlite/), [RabbitMQ](../rabbitmq/), [NATS](../nats/), or [write your own](../custom/).
+Pick your store: [Redis and Valkey](../redis/), [PostgreSQL](../postgres/), [SQL Server](../sqlserver/) (.NET), [SQLite and libSQL](../sqlite/), [RabbitMQ](../rabbitmq/), [NATS](../nats/), or [write your own](../custom/).

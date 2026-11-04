@@ -3,7 +3,7 @@ title: Brokers and leases
 description: Why RabbitMQ and NATS 'msg-id' are claim-only, how the NATS 'lease' strategy gets leases, and which RabbitMQ features could close the gap.
 ---
 
-The RabbitMQ backend, and NATS with its default `msg-id` strategy, give one guarantee: one instance wins each run. NATS with the `lease` strategy gives everything Redis, PostgreSQL and SQLite give. This page explains why the claim-only ones stop where they do, how NATS gets leases, and which RabbitMQ features could add backups, overlap protection and catch-up.
+The RabbitMQ backend, and NATS with its default `msg-id` strategy, give one guarantee: one instance wins each run. NATS with the `lease` strategy gives everything Redis, PostgreSQL, SQL Server and SQLite give. This page explains why the claim-only ones stop where they do, how NATS gets leases, and which RabbitMQ features could add backups, overlap protection and catch-up.
 
 :::caution[Not implemented for RabbitMQ]
 The RabbitMQ part of "Closing the gap" is design notes, not behaviour. Today RabbitMQ is claim-only: a run whose runner dies is lost.
@@ -69,7 +69,7 @@ NATS doesn't need the queue workaround. The JetStream **key-value store** has `c
 | Refuse an old runner | Its revision is out of date, so its heartbeat and "finished" fail |
 | Overlap `skip` | One key per job holds the state of its runs, so the check and the write are one step |
 
-So NATS with `lease` is a lease backend with the same guarantees as Redis, PostgreSQL and SQLite.
+So NATS with `lease` is a lease backend with the same guarantees as Redis, PostgreSQL, SQL Server and SQLite.
 
 **Lease expiry on the store's clock.** A compare-and-swap in NATS can't read the server's time. So each decision reads it just before, from the bucket's stream info (`ts`, reported by nats-server 2.10 and newer). If that read is a little old by the time the write lands, the write still holds: it succeeds only if nobody changed the job's runs in between. See [NATS](../nats/#how-one-instance-wins-with-lease).
 
@@ -78,7 +78,7 @@ So NATS with `lease` is a lease backend with the same guarantees as Redis, Postg
 | You need | Use |
 | --- | --- |
 | One winner per run, and a lost run now and then is acceptable | RabbitMQ, or NATS with `msg-id` |
-| Backups, overlap protection, catch-up or hand-over | Redis `lease`, PostgreSQL, SQLite, or NATS with `lease` |
+| Backups, overlap protection, catch-up or hand-over | Redis `lease`, PostgreSQL, SQL Server (.NET), SQLite, or NATS with `lease` |
 
 On a claim-only backend, write each run to work on [everything outstanding](../../reference/guarantees/#that-every-slot-runs). A lost run then costs a delay, not lost work.
 

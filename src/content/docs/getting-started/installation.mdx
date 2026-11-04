@@ -72,6 +72,12 @@ Each store is a package of its own, which brings in `Anarchon` (the core) and th
     ```
     PostgreSQL 9.5 or newer, on Npgsql. You can pass your app's `NpgsqlDataSource` instead of a connection string.
   </TabItem>
+  <TabItem label="SQL Server">
+    ```sh
+    dotnet add package Anarchon.SqlServer
+    ```
+    SQL Server 2016 or newer, or Azure SQL, on Microsoft.Data.SqlClient. .NET only: the Node.js package has no SQL Server backend.
+  </TabItem>
   <TabItem label="SQLite">
     ```sh
     dotnet add package Anarchon.Sqlite
@@ -93,7 +99,7 @@ Each store is a package of its own, which brings in `Anarchon` (the core) and th
 </Tabs>
 
 With a host (ASP.NET Core, a worker service), `AddAnarchon()` and `UseRedis()`, `UsePostgres()`,
-`UseSqlite()`, `UseRabbitMQ()` or `UseNats()` come with these packages: see
+`UseSqlServer()`, `UseSqlite()`, `UseRabbitMQ()` or `UseNats()` come with these packages: see
 [ASP.NET Core](../../recipes/aspnet-core/).
 
 </TabItem>

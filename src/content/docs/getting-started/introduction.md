@@ -77,7 +77,7 @@ Deciding who runs is the easy half. The harder half is what happens after:
 - The job takes **longer than its interval**, so the next run is due before this one ends.
 - **Every instance is down** when a run is due.
 
-On Redis, Valkey, PostgreSQL, SQLite and NATS (with its lease strategy), anarchon handles these with a **lease**. The winner keeps telling the store "I'm still alive" every few seconds. The other instances become its *backups* and watch that lease. If it stops being renewed, one backup takes the run over.
+On Redis, Valkey, PostgreSQL, SQL Server (.NET only), SQLite and NATS (with its lease strategy), anarchon handles these with a **lease**. The winner keeps telling the store "I'm still alive" every few seconds. The other instances become its *backups* and watch that lease. If it stops being renewed, one backup takes the run over.
 
 | Situation | What anarchon does |
 | --- | --- |
@@ -95,7 +95,7 @@ A takeover starts the handler again from the beginning, as a new attempt; it doe
 ## What you need
 
 - **Node.js 20 or newer** for the `anarchon` package on npm, or **.NET 10** for the `Anarchon` packages on NuGet. Both run the same algorithm on the same stored data, so a service can even mix Node.js and .NET instances.
-- **One shared store** that all instances can reach: Redis, Valkey, PostgreSQL, SQLite (same machine), or a libSQL server (Node.js only). NATS works too, with all of them on its lease strategy; RabbitMQ works with fewer guarantees (see [Backends](../../backends/overview/)).
+- **One shared store** that all instances can reach: Redis, Valkey, PostgreSQL, SQL Server (.NET only), SQLite (same machine), or a libSQL server (Node.js only). NATS works too, with all of them on its lease strategy; RabbitMQ works with fewer guarantees (see [Backends](../../backends/overview/)).
 
 ## What anarchon is not
 

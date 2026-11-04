@@ -141,6 +141,10 @@ Why a separate lock row, instead of just inserting the run and catching the conf
 
 `now` is the database's clock, read inside the transaction.
 
+## SQL Server
+
+.NET only (`Anarchon.SqlServer`). The steps are the same as for PostgreSQL; the lock is different. The first statement of every claim is `sp_getapplock` on a name built from the table and the job, exclusive and owned by the transaction, so a second claim of the job waits there until the first commits. The claim then reads the run's rows `WITH (UPDLOCK, ROWLOCK)`, which SQL Server's `FOR UPDATE` is, and the transaction is READ COMMITTED whatever the connection was left at. `now` is `SYSUTCDATETIME()`. See [SQL Server](../../backends/sqlserver/#how-one-instance-wins).
+
 ## SQLite
 
 **Store feature:** one writer at a time for the whole database, and `BEGIN IMMEDIATE`.
@@ -161,7 +165,7 @@ The steps are the same as for PostgreSQL. What differs is the serialization: SQL
 
 ## The read before the transaction
 
-On PostgreSQL and SQLite, a **backup's check** on a run goes through a shortcut first: a single `SELECT` of the run. If the run is finished, or its lease is still alive, the answer is known and no transaction is opened. Only when the lease has run out does the backup open the transaction above, which checks again under the lock.
+On PostgreSQL, SQL Server and SQLite, a **backup's check** on a run goes through a shortcut first: a single `SELECT` of the run. If the run is finished, or its lease is still alive, the answer is known and no transaction is opened. Only when the lease has run out does the backup open the transaction above, which checks again under the lock.
 
 That keeps backups from taking the write lock every heartbeat just to learn "still alive".
 
@@ -208,6 +212,7 @@ With the `lease` strategy, the **store feature** is a key-value write at an expe
 | Redis `idmp` | `XADD ... IDMP` | Redis | `strategy.durationSec` |
 | Redis `script` | Lua script | Redis | `strategy.windowMs` |
 | PostgreSQL | Transaction + row lock per job | The row lock | as long as a late claim could ask |
+| SQL Server (.NET) | Transaction + application lock per job | The application lock | as long as a late claim could ask |
 | SQLite | `BEGIN IMMEDIATE` transaction | The database write lock | as long as a late claim could ask |
 | RabbitMQ | Publish to a full-or-empty queue | The queue | `slotTtlMs` |
 | NATS `msg-id` | De-duplicated publish | The stream leader | `duplicateWindowMs` |

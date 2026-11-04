@@ -306,7 +306,7 @@ const backend = new SqliteBackend({
 
 ## Another SQL database
 
-For a SQL database, extend `SqlBackend` instead of writing the contract yourself (in .NET, from the `Anarchon.Sql` package): it brings the tables, the claim transaction, leases and history. You give the connection, a check of the server, and a `SqlDialect`: what differs between databases (the integer type, the server's clock, row locking, placeholders). In .NET the connection is any ADO.NET `DbConnection`, and the dialect is a class with `BigInt` and `NowMs` to set, and `ForUpdate`, `SerializeClaims`, `ExtraTables`, `BeginClaimAsync` and `IsAlreadyCreated` to override when needed.
+For a SQL database, extend `SqlBackend` instead of writing the contract yourself (in .NET, from the `Anarchon.Sql` package): it brings the tables, the claim transaction, leases and history. You give the connection, a check of the server, and a `SqlDialect`: what differs between databases (the integer type, the server's clock, row locking, placeholders). In .NET the connection is any ADO.NET `DbConnection`, and the dialect is a class with `BigInt` and `NowMs` to set, and `ForUpdate`, `SerializeClaims`, `ExtraTables`, `BeginClaimAsync` and `IsAlreadyCreated` to override when needed. A database whose SQL differs more can also override `LockHint` (a table hint instead of `FOR UPDATE`), `KeyText` and `Text` (the text column types), `CreateTable`, `CreateIndex`, `InsertIfNew` and `Page` (`LIMIT`/`OFFSET`); their defaults are the SQL that PostgreSQL and SQLite share.
 
 <Tabs syncKey="language">
 <TabItem label="Node.js">
@@ -371,7 +371,7 @@ public sealed class EmbeddedSqlBackend() : SqlBackend("embedded_runs", new Embed
 </TabItem>
 </Tabs>
 
-`nowMs` (`NowMs`) must read the database server's clock, so all instances agree on lease times; `forUpdate` and `serialize` must make two claims of one job take turns. The PostgreSQL and SQLite backends are the reference.
+`nowMs` (`NowMs`) must read the database server's clock, so all instances agree on lease times; `forUpdate` and `serialize` must make two claims of one job take turns. The PostgreSQL and SQLite backends are the reference; in .NET, the SQL Server backend shows a dialect that overrides nearly everything.
 
 ## Testing a backend
 

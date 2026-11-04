@@ -291,7 +291,7 @@ scheduler.Every("sample-metrics", TimeSpan.FromSeconds(5), SampleAsync, new() { 
 </TabItem>
 </Tabs>
 
-**Works on** lease backends: PostgreSQL, SQLite, Redis, Valkey or NATS with their lease strategy. On the others, runs can always overlap; if two must not, guard inside the job (a database lock, for example). **Use it when:**
+**Works on** lease backends: PostgreSQL, SQL Server (.NET), SQLite, Redis, Valkey or NATS with their lease strategy. On the others, runs can always overlap; if two must not, guard inside the job (a database lock, for example). **Use it when:**
 
 - **Skip:** runs of the job write the same data: a sync, an export, a reindex. Two at once would fight.
 - **Allow:** each run stands alone: a ping, a metrics sample, a check whose result is only logged.
