@@ -3,6 +3,7 @@
 import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
 import mermaid from 'astro-mermaid';
+import starlightThemeNova from 'starlight-theme-nova';
 
 // Languages. English is the root locale: its pages live directly in src/content/docs/ and have no
 // URL prefix. To add a language, add it here (e.g. el: { label: 'Ελληνικά', lang: 'el' }) and put its
@@ -114,12 +115,28 @@ const sidebar = [
   },
 ];
 
+const base = '/anarchon-docs';
+
+// Top bar links, one per main sidebar group. Each gets the label and URL of the current language.
+const navLink = (path, en, el) => ({
+  label: { en, el },
+  href: { en: `${base}/${path}/`, el: `${base}/el/${path}/` },
+});
+const nav = [
+  navLink('getting-started/introduction', 'Start here', 'Ξεκινήστε εδώ'),
+  navLink('guides/defining-jobs', 'Guides', 'Οδηγοί'),
+  navLink('backends/overview', 'Backends', 'Backends'),
+  navLink('internals/architecture', 'How it works', 'Πώς λειτουργεί'),
+  navLink('recipes/express', 'Recipes', 'Συνταγές'),
+  navLink('reference/guarantees', 'Reference', 'Αναφορά'),
+];
+
 // Social cards need an absolute URL: the image is public/og.png, rendered from assets/social-card.svg.
 const socialCard = 'https://aristoteliss.github.io/anarchon-docs/og.png';
 
 export default defineConfig({
   site: 'https://aristoteliss.github.io',
-  base: '/anarchon-docs',
+  base,
   integrations: [
     mermaid({ autoTheme: true }),
     starlight({
@@ -129,15 +146,17 @@ export default defineConfig({
       defaultLocale: 'root',
       locales,
       sidebar,
+      plugins: [starlightThemeNova({ nav })],
+      // Links that share an icon are grouped into one dropdown by src/components/SocialIcons.astro.
       social: [
         {
           icon: 'github',
-          label: 'GitHub (Node.js)',
+          label: 'anarchon for Node.js',
           href: 'https://github.com/aristoteliss/anarchon',
         },
         {
           icon: 'github',
-          label: 'GitHub (.NET)',
+          label: 'anarchon for .NET',
           href: 'https://github.com/aristoteliss/anarchon-dotnet',
         },
       ],
@@ -155,6 +174,10 @@ export default defineConfig({
         },
         { tag: 'meta', attrs: { name: 'twitter:image', content: socialCard } },
       ],
+      components: {
+        Header: './src/components/Header.astro',
+        SocialIcons: './src/components/SocialIcons.astro',
+      },
       customCss: ['./src/styles/custom.css'],
       lastUpdated: true,
       tableOfContents: { minHeadingLevel: 2, maxHeadingLevel: 3 },
