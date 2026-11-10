@@ -53,6 +53,8 @@ flowchart TB
 | `ClaimOnlyRunner` | `src/scheduler/claim-only-runner.ts` | Για claim-only backends: μία διεκδίκηση (claim), και ο νικητής εκτελεί |
 | `Executor` | `src/scheduler/executor.ts` | Καλεί τον handler σας, εφαρμόζει το χρονικό όριο (timeout), αποφασίζει πώς ολοκληρώθηκε η εκτέλεση, αποθηκεύει το αποτέλεσμα και εκπέμπει συμβάντα (events) |
 | Backends | `src/backends/` | Ένας adapter ανά store. Κάθε adapter υλοποιεί την ατομική διεκδίκηση αξιοποιώντας τις δυνατότητες του αντίστοιχου store |
+| Κανόνες lease | `src/backends/lease-rules.ts` | Η μηχανή καταστάσεων του lease, που εφαρμόζουν τα PostgreSQL, SQLite και NATS `lease` σε ό,τι διαβάζουν. Το Lua script του Redis έχει τους ίδιους κανόνες, με την ίδια σειρά |
+| Κοινά εργαλεία backend | `src/backends/shared.ts` | Ό,τι μοιράζονται όλα τα backends: μια σύνδεση που ανοίγει στην πρώτη χρήση, οι έλεγχοι ονομάτων job και εκδόσεων server, και η διεκδίκηση μιας χειροκίνητης εκτέλεσης |
 
 Στο .NET τα ίδια μέρη βρίσκονται στο `src/Anarchon/`: το `Scheduler.cs`, και κάτω από το `Scheduling/` τα αρχεία `JobFactory.cs`, `Schedule.cs`, `JobTimers.cs`, `LeaseRunner.cs`, `ClaimOnlyRunner.cs` και `Executor.cs`. Κάθε backend είναι ένα δικό του πακέτο (`src/Anarchon.Redis/` και τα υπόλοιπα), και το `src/Anarchon.Sql/` περιέχει όσα μοιράζονται η PostgreSQL και η SQLite.
 
