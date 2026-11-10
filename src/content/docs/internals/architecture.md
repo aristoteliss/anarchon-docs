@@ -53,6 +53,8 @@ flowchart TB
 | `ClaimOnlyRunner` | `src/scheduler/claim-only-runner.ts` | For claim-only backends: one claim, and the winner runs |
 | `Executor` | `src/scheduler/executor.ts` | Calls your handler, applies the timeout, decides how the run ended, stores the result and emits events |
 | Backends | `src/backends/` | One adapter per store. Each implements the atomic claim with what that store offers |
+| Lease rules | `src/backends/lease-rules.ts` | The lease state machine that PostgreSQL, SQLite and NATS `lease` apply to what they read. The Redis Lua script holds the same rules, in the same order |
+| Backend helpers | `src/backends/shared.ts` | What every backend shares: a connection opened on first use, the checks of job names and server versions, and the claim of a manual run |
 
 In .NET the same parts are in `src/Anarchon/`: `Scheduler.cs`, and under `Scheduling/` the files `JobFactory.cs`, `Schedule.cs`, `JobTimers.cs`, `LeaseRunner.cs`, `ClaimOnlyRunner.cs` and `Executor.cs`. Each backend is a package of its own (`src/Anarchon.Redis/` and the others), and `src/Anarchon.Sql/` holds what PostgreSQL and SQLite share.
 
