@@ -304,6 +304,42 @@ const backend = new SqliteBackend({
 });
 ```
 
+### Ιστορικό σε ένα lease backend
+
+Μια προσπάθεια χωρίς αποθηκευμένο αποτέλεσμα εκτελείται ακόμη μόνο όσο είναι η τρέχουσα προσπάθεια της εκτέλεσης και η μίσθωσή της είναι ενεργή. Αλλιώς ο runner της σταμάτησε πριν ολοκληρωθεί, και η προσπάθεια είναι `interrupted`· όταν η εκτέλεση τελείωσε με άλλον τρόπο, η προσπάθεια δείχνει αυτή την κατάσταση. Δώστε αυτόν τον κανόνα στο `buildHistory()` ως `pendingStatus` (`RunHistory.Build()` στο .NET), με το `now` από το ρολόι του store σας. Στο .NET, το `RunHistory.PendingStatus()` τον εφαρμόζει· το πακέτο Node.js δεν έχει αντίστοιχο export.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
+```ts
+return buildHistory({
+  job,
+  claims,
+  results,
+  limit,
+  pendingStatus: (claim) => {
+    const run = runs.get(claim.slot);
+    if (!run || run.attempt !== claim.attempt) return 'interrupted';
+    if (run.status !== 'running') return run.status;
+    return run.leaseUntil >= now ? 'running' : 'interrupted';
+  },
+});
+```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+return RunHistory.Build(job, claims, results, limit, claim =>
+{
+    var run = runs.GetValueOrDefault(claim.Slot);
+    return RunHistory.PendingStatus(run?.Status, run?.Attempt == claim.Attempt, run?.LeaseEnd ?? 0, now);
+});
+```
+
+</TabItem>
+</Tabs>
+
 ## Μια άλλη βάση SQL
 
 Για μια βάση SQL, επεκτείνετε το `SqlBackend` αντί να γράψετε το συμβόλαιο μόνοι σας (στο .NET, από το πακέτο `Anarchon.Sql`): φέρνει τους πίνακες, τη συναλλαγή διεκδίκησης, τις μισθώσεις και το ιστορικό. Εσείς δίνετε τη σύνδεση, έναν έλεγχο του server, και ένα `SqlDialect`: ό,τι διαφέρει από βάση σε βάση (ο τύπος ακεραίων, το ρολόι του server, το κλείδωμα γραμμών, τα placeholders). Στο .NET η σύνδεση είναι οποιοδήποτε `DbConnection` του ADO.NET, και το dialect είναι μια κλάση στην οποία ορίζετε τα `BigInt` και `NowMs`, και κάνετε override τα `ForUpdate`, `SerializeClaims`, `ExtraTables`, `BeginClaimAsync` και `IsAlreadyCreated` όταν χρειάζεται.

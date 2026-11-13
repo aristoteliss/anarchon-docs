@@ -54,12 +54,14 @@ Every instance of a service must use the same strategy. The two keep their claim
 | `servers` | `'nats://localhost:4222'` | One URL or a list |
 | `connection` | | Your own connection from `@nats-io/transport-node`. You keep ownership |
 | `stream` | `'CRON'` | JetStream stream name |
-| `prefix` | `'cron.'` | Subject prefix |
+| `prefix` | `'cron.'` | Subject prefix. If it is not empty, it ends with a dot |
 | `duplicateWindowMs` | `300000` (5 min) | How long JetStream remembers a claimed run. With `lease`, only drops a history record the client sends twice |
 | `historySize` | `1000` | About how many runs to keep per job, at least |
 | `replicas` | `1` for a new stream | Stream replicas in a NATS cluster; with `lease`, also the replicas of a new bucket |
 
 In .NET, `NatsBackendOptions` has `Strategy`, `ConnectionString` (one URL, or several separated by commas), `Connection` (your own `INatsConnection`), `Stream`, `Prefix`, `DuplicateWindow` (a `TimeSpan`), `HistorySize` and `Replicas`, with the same defaults.
+
+A `prefix` (`Prefix`) that is not empty and does not end with a dot is refused when you make the backend. The stream covers the subjects `<prefix>>`, and without the dot that matches none of the job subjects, so every claim would fail. Node.js throws a `TypeError` with the code `ANARCHON_INVALID_ARGUMENT`; .NET throws an `ArgumentException`.
 
 <Tabs syncKey="language">
 <TabItem label="Node.js">

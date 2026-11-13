@@ -304,6 +304,42 @@ const backend = new SqliteBackend({
 });
 ```
 
+### History on a lease backend
+
+An attempt without a saved result is still running only while it is the run's current attempt and its lease is live. Otherwise its runner stopped before it finished, and the attempt is `interrupted`; when the run ended in another way, the attempt shows that status. Give this rule to `buildHistory()` as `pendingStatus` (`RunHistory.Build()` in .NET), with `now` from your store's clock. In .NET, `RunHistory.PendingStatus()` applies it; the Node.js package has no such export.
+
+<Tabs syncKey="language">
+<TabItem label="Node.js">
+
+```ts
+return buildHistory({
+  job,
+  claims,
+  results,
+  limit,
+  pendingStatus: (claim) => {
+    const run = runs.get(claim.slot);
+    if (!run || run.attempt !== claim.attempt) return 'interrupted';
+    if (run.status !== 'running') return run.status;
+    return run.leaseUntil >= now ? 'running' : 'interrupted';
+  },
+});
+```
+
+</TabItem>
+<TabItem label=".NET">
+
+```csharp
+return RunHistory.Build(job, claims, results, limit, claim =>
+{
+    var run = runs.GetValueOrDefault(claim.Slot);
+    return RunHistory.PendingStatus(run?.Status, run?.Attempt == claim.Attempt, run?.LeaseEnd ?? 0, now);
+});
+```
+
+</TabItem>
+</Tabs>
+
 ## Another SQL database
 
 For a SQL database, extend `SqlBackend` instead of writing the contract yourself (in .NET, from the `Anarchon.Sql` package): it brings the tables, the claim transaction, leases and history. You give the connection, a check of the server, and a `SqlDialect`: what differs between databases (the integer type, the server's clock, row locking, placeholders). In .NET the connection is any ADO.NET `DbConnection`, and the dialect is a class with `BigInt` and `NowMs` to set, and `ForUpdate`, `SerializeClaims`, `ExtraTables`, `BeginClaimAsync` and `IsAlreadyCreated` to override when needed. A database whose SQL differs more can also override `LockHint` (a table hint instead of `FOR UPDATE`), `KeyText` and `Text` (the text column types), `CreateTable`, `CreateIndex`, `InsertIfNew` and `Page` (`LIMIT`/`OFFSET`); their defaults are the SQL that PostgreSQL and SQLite share.
