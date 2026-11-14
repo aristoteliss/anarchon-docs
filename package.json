@@ -19,7 +19,7 @@
     "starlight-theme-nova": "^0.12.3"
   },
   "devDependencies": {
-    "jsdom": "^30.1.3"
+    "jsdom": "^31.0.0"
   },
   "packageManager": "pnpm@11.18.0",
   "engines": {
