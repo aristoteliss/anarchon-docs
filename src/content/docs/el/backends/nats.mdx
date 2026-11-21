@@ -54,12 +54,14 @@ new Scheduler(new SchedulerOptions { Backend = new NatsBackend(new NatsBackendOp
 | `servers` | `'nats://localhost:4222'` | Ένα URL ή μια λίστα |
 | `connection` | | Η δική σας σύνδεση από το `@nats-io/transport-node`. Διατηρείτε την κυριότητά της |
 | `stream` | `'CRON'` | Όνομα JetStream stream |
-| `prefix` | `'cron.'` | Πρόθεμα subject |
+| `prefix` | `'cron.'` | Πρόθεμα subject. Αν δεν είναι κενό, τελειώνει με τελεία |
 | `duplicateWindowMs` | `300000` (5 λεπτά) | Για πόσο χρόνο το JetStream απομνημονεύει μια δεσμευμένη εκτέλεση. Με το `lease`, απλώς απορρίπτει μια εγγραφή ιστορικού που ο client στέλνει δύο φορές |
 | `historySize` | `1000` | Περίπου πόσες εκτελέσεις διατηρούνται ανά εργασία, τουλάχιστον |
 | `replicas` | `1` για νέο stream | Αντίγραφα (replicas) του stream σε NATS cluster· με το `lease`, και τα αντίγραφα ενός νέου bucket |
 
 Στο .NET, το `NatsBackendOptions` διαθέτει τα `Strategy`, `ConnectionString` (ένα URL, ή περισσότερα χωρισμένα με κόμμα), `Connection` (η δική σας `INatsConnection`), `Stream`, `Prefix`, `DuplicateWindow` (`TimeSpan`), `HistorySize` και `Replicas`, με τις ίδιες προεπιλογές.
+
+Ένα `prefix` (`Prefix`) που δεν είναι κενό και δεν τελειώνει με τελεία απορρίπτεται κατά τη δημιουργία του backend. Το stream καλύπτει τα subjects `<prefix>>`, και χωρίς την τελεία αυτό δεν ταιριάζει με κανένα subject των jobs, οπότε κάθε claim θα αποτύγχανε. Το Node.js πετά `TypeError` με τον κωδικό `ANARCHON_INVALID_ARGUMENT`· το .NET πετά `ArgumentException`.
 
 <Tabs syncKey="language">
 <TabItem label="Node.js">

@@ -33,14 +33,15 @@ await scheduler.StartAsync();
 | `Register(object target, RegisterOptions? options = null)` | Κάθε εργασία που δηλώνεται με [attributes](../attributes/) στις μεθόδους του αντικειμένου, ή καμία |
 | `Remove(string name)` → `bool` | Αφαιρεί μια εργασία τοπικά. Μια εκτέλεση που βρίσκεται ήδη σε εξέλιξη εδώ ολοκληρώνεται. Επιστρέφει `false` όταν καμία εργασία δεν έχει αυτό το όνομα |
 
-Ένα όνομα που είναι ήδη καταχωρημένο εγείρει `AnarchonException` (`JobExists`), και ένα κενό όνομα
+Το όνομα και οι επιλογές ελέγχονται πρώτα: μια λάθος τιμή εγείρει `ArgumentException`, και όταν το
+όνομα είναι ήδη πιασμένο. Μετά, ένα όνομα που είναι ήδη καταχωρημένο εγείρει `AnarchonException` (`JobExists`), και ένα κενό όνομα
 `ArgumentException`. Τα RabbitMQ και NATS δέχονται μόνο γράμματα, ψηφία, `_` και `-` (`Unsupported`).
 
 ## Εκκίνηση και τερματισμός
 
 | Μέθοδος | Λειτουργία |
 | --- | --- |
-| `StartAsync(CancellationToken = default)` → `Task` | Συνδέεται, προετοιμάζει κάθε εργασία, ανακτά (recovers) και καλύπτει καθυστερούμενες (catches up) εκτελέσεις, και οπλίζει τα χρονόμετρα. Εάν αποτύχει, το backend κλείνει και η `StartAsync()` μπορεί να κληθεί ξανά |
+| `StartAsync(CancellationToken = default)` → `Task` | Συνδέεται, προετοιμάζει κάθε εργασία, ανακτά (recovers) και καλύπτει καθυστερούμενες (catches up) εκτελέσεις, και οπλίζει τα χρονόμετρα. Εάν αποτύχει, το backend κλείνει και η `StartAsync()` μπορεί να κληθεί ξανά. Όσο μια `StopAsync()` περιμένει τις εκτελέσεις, απορρίπτεται με `State` |
 | `StopAsync(CancellationToken = default)` → `Task` | Σταματά τα χρονόμετρα, ακυρώνει τα tokens των τρεχουσών εργασιών, περιμένει έως το `StopTimeout` (ή μέχρι να ακυρωθεί το token), και έπειτα κλείνει ό,τι άνοιξε το backend. Ασφαλές για διπλή κλήση |
 | `DisposeAsync()`, `Dispose()` | Το ίδιο με τη `StopAsync()` |
 

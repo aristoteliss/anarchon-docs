@@ -139,6 +139,8 @@ The first statement of every claim writes the job's row in `<table>_jobs`. Postg
 
 Why a separate lock row, instead of just inserting the run and catching the conflict? Because the claim also has to look at **other** runs of the job (for the overlap rule), and that decision must be consistent too. Serializing per job makes the whole decision one step.
 
+When the run has no row yet, the claim reads the other running runs of the job before it writes. If one of them has a live lease and the overlap rule is `skip`, it answers `overlap` with the earliest live run and writes nothing. Only a claim that goes on marks older runs whose lease ran out as `interrupted`, and then inserts its run.
+
 `now` is the database's clock, read inside the transaction.
 
 ## SQL Server
