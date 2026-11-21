@@ -8,7 +8,7 @@ import config from 'virtual:starlight/user-config';
 
 type Link = NonNullable<typeof config.social>[number];
 
-const groups = new Map<string, Link[]>();
+const groups = new Map<Link['icon'], Link[]>();
 for (const link of config.social ?? []) {
   groups.set(link.icon, [...(groups.get(link.icon) ?? []), link]);
 }
