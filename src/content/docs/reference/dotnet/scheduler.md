@@ -33,14 +33,15 @@ Each method returns the scheduler, so calls chain. Jobs can be added before or a
 | `Register(object target, RegisterOptions? options = null)` | Every job declared with [attributes](../attributes/) on the object's methods, or none |
 | `Remove(string name)` → `bool` | Removes a job here. A run in progress here finishes. `false` when no job has that name |
 
-A name that is already registered throws `AnarchonException` (`JobExists`), and an empty name an
+The name and the options are checked first: a bad value throws `ArgumentException`, also when the
+name is taken. Then a name that is already registered throws `AnarchonException` (`JobExists`), and an empty name an
 `ArgumentException`. RabbitMQ and NATS accept only letters, digits, `_` and `-` (`Unsupported`).
 
 ## Starting and stopping
 
 | Method | Does |
 | --- | --- |
-| `StartAsync(CancellationToken = default)` → `Task` | Connects, prepares each job, recovers and catches up runs, and arms the timers. If it fails, the backend is closed and `StartAsync()` can be called again |
+| `StartAsync(CancellationToken = default)` → `Task` | Connects, prepares each job, recovers and catches up runs, and arms the timers. If it fails, the backend is closed and `StartAsync()` can be called again. While a `StopAsync()` waits for runs, it is refused with `State` |
 | `StopAsync(CancellationToken = default)` → `Task` | Stops the timers, cancels running jobs' tokens, waits up to `StopTimeout` (or until the token is cancelled), then closes what the backend opened. Safe to call twice |
 | `DisposeAsync()`, `Dispose()` | The same as `StopAsync()` |
 
